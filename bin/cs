@@ -1,0 +1,59 @@
+#!/bin/bash
+
+if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
+    echo "错误：此脚本需要在 Linux 环境中运行"
+    exit 1
+fi
+
+PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+export PROJECT_ROOT
+
+source "$PROJECT_ROOT/lib/core.sh"
+
+if ! command_exists dialog; then
+    log_error "dialog 未安装，请先运行安装脚本"
+    exit 1
+fi
+
+main() {
+    if [[ $# -gt 0 ]]; then
+        case "$1" in
+            update|u)
+                load_module "update"
+                module_update
+                ;;
+            version|v)
+                echo "$PROJECT_NAME v$PROJECT_VERSION"
+                ;;
+            help|h)
+                echo "用法: cs [命令]"
+                echo ""
+                echo "命令:"
+                echo "  (无参数)    启动主菜单"
+                echo "  update, u   更新脚本"
+                echo "  version, v  显示版本"
+                echo "  help, h     显示帮助"
+                ;;
+            *)
+                log_error "未知命令: $1"
+                echo "使用 'cs help' 查看可用命令"
+                exit 1
+                ;;
+        esac
+        exit 0
+    fi
+    
+    if [[ -z "$TMUX" ]]; then
+        local session_name="🐹 Hamster Script"
+        if tmux has-session -t "$session_name" 2>/dev/null; then
+            tmux new-window -t "$session_name" -n "主菜单" "bash $PROJECT_ROOT/bin/cs; exec bash"
+            tmux attach-session -t "$session_name"
+            exit 0
+        fi
+    fi
+    
+    load_module "menu"
+    show_main_menu
+}
+
+main "$@"

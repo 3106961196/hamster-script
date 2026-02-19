@@ -1,0 +1,11 @@
+projects:
+  - name: NapCat
+    url: https://gh-proxy.org/https://github.com/NapNeko/NapCatQQ.git
+    target: /root/cs
+    pre: node,pnpm,git
+    post: "NAPCAT_INSTALL=true"
+  - name: TRSS-Yunzai
+    url: https://gitee.com/TimeRainStarSky/Yunzai.git
+    target: /root/cs
+    pre: pnpm
+    post: "cd TRSS-Yunzai && pnpm i"
