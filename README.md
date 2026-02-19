@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-bash <(curl -sL https://gitee.com/duac/hamster-script/raw/main/install.sh)
+bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/install.sh)
 ```
 
 ## 使用方法

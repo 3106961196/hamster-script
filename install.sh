@@ -1,7 +1,7 @@
 #!/bin/bash
 set -e
 
-REPO_URL="https://gitee.com/duac/hamster-script.git"
+REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
 print_banner() {
