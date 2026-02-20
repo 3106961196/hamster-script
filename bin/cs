@@ -10,6 +10,9 @@ export PROJECT_ROOT
 
 source "$PROJECT_ROOT/lib/core.sh"
 
+# 初始化核心库
+init_core
+
 if ! command_exists dialog; then
     log_error "dialog 未安装，请先运行安装脚本"
     exit 1
