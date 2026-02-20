@@ -176,7 +176,27 @@ sys_get_timezone() {
     timedatectl show 2>/dev/null | grep Timezone | cut -d= -f2 || cat /etc/timezone 2>/dev/null
 }
 
+sys_get_timezone_from_api() {
+    local timezone
+    if command_exists curl; then
+        timezone=$(curl -s http://ip-api.com/json | grep -oP '"timezone":"\K[^"]+')
+        if [[ -n "$timezone" ]]; then
+            echo "$timezone"
+            return 0
+        fi
+    fi
+    echo "Asia/Shanghai"  # 默认时区
+    return 1
+}
+
 sys_sync_time() {
+    # 先通过API获取正确的时区
+    local api_timezone
+    api_timezone=$(sys_get_timezone_from_api)
+    if [[ -n "$api_timezone" ]]; then
+        sys_set_timezone "$api_timezone"
+    fi
+    
     if command_exists timedatectl; then
         timedatectl set-ntp true
         log_success "已启用 NTP 时间同步"

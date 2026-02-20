@@ -36,6 +36,13 @@ main() {
                 echo "  update, u   更新脚本"
                 echo "  version, v  显示版本"
                 echo "  help, h     显示帮助"
+                echo "  timezone    校准时区"
+                ;;
+            timezone)
+                # 校准时区命令
+                load_module "system"
+                time_sync
+                exit 0
                 ;;
             *)
                 log_error "未知命令: $1"

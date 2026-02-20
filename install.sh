@@ -180,6 +180,15 @@ print_success() {
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo ""
+    
+    # 首次安装时自动校准时区
+    echo "正在校准时区..."
+    if bash "$INSTALL_DIR/bin/cs" timezone; then
+        echo "时区校准完成"
+    else
+        echo "时区校准失败，请手动同步"
+    fi
+    echo ""
 }
 
 main() {

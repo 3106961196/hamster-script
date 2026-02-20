@@ -221,12 +221,12 @@ secure_check() {
 }
 
 system_time_menu() {
-    while true; do
+    while true;
         local choice
-        choice=$(ui_submenu "时间管理" "请选择功能:" \
-            "1" "查看时间" \
-            "2" "设置时区" \
-            "3" "同步时间" \
+        choice=$(ui_submenu "时间管理" "请选择功能:"
+            "1" "查看时间"
+            "2" "自定义时区"
+            "3" "同步时间"
             "4" "手动设置时间")
         
         local exit_code=$?
@@ -249,7 +249,28 @@ time_show() {
     
     {
         echo "当前时间: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "时区: $(sys_get_timezone)"
+        local tz=$(sys_get_timezone)
+        # 显示中英双语时区
+        case "$tz" in
+            Asia/Shanghai) echo "时区: Asia/Shanghai (亚洲/上海)" ;;
+            Asia/Beijing) echo "时区: Asia/Beijing (亚洲/北京)" ;;
+            Asia/Tokyo) echo "时区: Asia/Tokyo (亚洲/东京)" ;;
+            Asia/Seoul) echo "时区: Asia/Seoul (亚洲/首尔)" ;;
+            Asia/Hong_Kong) echo "时区: Asia/Hong_Kong (亚洲/香港)" ;;
+            Asia/Taipei) echo "时区: Asia/Taipei (亚洲/台北)" ;;
+            Asia/Singapore) echo "时区: Asia/Singapore (亚洲/新加坡)" ;;
+            Asia/Dubai) echo "时区: Asia/Dubai (亚洲/迪拜)" ;;
+            Europe/London) echo "时区: Europe/London (欧洲/伦敦)" ;;
+            Europe/Paris) echo "时区: Europe/Paris (欧洲/巴黎)" ;;
+            Europe/Berlin) echo "时区: Europe/Berlin (欧洲/柏林)" ;;
+            Europe/Moscow) echo "时区: Europe/Moscow (欧洲/莫斯科)" ;;
+            America/New_York) echo "时区: America/New_York (美洲/纽约)" ;;
+            America/Los_Angeles) echo "时区: America/Los_Angeles (美洲/洛杉矶)" ;;
+            America/Chicago) echo "时区: America/Chicago (美洲/芝加哥)" ;;
+            America/Toronto) echo "时区: America/Toronto (美洲/多伦多)" ;;
+            Australia/Sydney) echo "时区: Australia/Sydney (澳洲/悉尼)" ;;
+            *) echo "时区: $tz" ;;
+        esac
         echo "运行时间: $(sys_get_uptime)"
     } > "$temp_log" 2>&1
     
@@ -257,15 +278,65 @@ time_show() {
 }
 
 time_set_timezone() {
-    local timezone
-    timezone=$(ui_input "请输入时区 (如: Asia/Shanghai):")
+    local choice
+    choice=$(ui_menu "自定义时区" "请选择时区:"
+        "1" "Asia/Shanghai (亚洲/上海)"
+        "2" "Asia/Beijing (亚洲/北京)"
+        "3" "Asia/Tokyo (亚洲/东京)"
+        "4" "Asia/Seoul (亚洲/首尔)"
+        "5" "Asia/Hong_Kong (亚洲/香港)"
+        "6" "Asia/Taipei (亚洲/台北)"
+        "7" "Asia/Singapore (亚洲/新加坡)"
+        "8" "Asia/Dubai (亚洲/迪拜)"
+        "9" "Europe/London (欧洲/伦敦)"
+        "10" "Europe/Paris (欧洲/巴黎)"
+        "11" "Europe/Berlin (欧洲/柏林)"
+        "12" "Europe/Moscow (欧洲/莫斯科)"
+        "13" "America/New_York (美洲/纽约)"
+        "14" "America/Los_Angeles (美洲/洛杉矶)"
+        "15" "America/Chicago (美洲/芝加哥)"
+        "16" "America/Toronto (美洲/多伦多)"
+        "17" "Australia/Sydney (澳洲/悉尼)"
+        "18" "其他 (手动输入)")
     
-    if [[ -n "$timezone" ]]; then
-        if sys_set_timezone "$timezone"; then
-            ui_msg "时区已设置为 $timezone"
-        else
-            ui_msg "时区设置失败" "错误"
-        fi
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]]; then
+        return
+    fi
+    
+    local timezone
+    case "$choice" in
+        1) timezone="Asia/Shanghai" ;;
+        2) timezone="Asia/Beijing" ;;
+        3) timezone="Asia/Tokyo" ;;
+        4) timezone="Asia/Seoul" ;;
+        5) timezone="Asia/Hong_Kong" ;;
+        6) timezone="Asia/Taipei" ;;
+        7) timezone="Asia/Singapore" ;;
+        8) timezone="Asia/Dubai" ;;
+        9) timezone="Europe/London" ;;
+        10) timezone="Europe/Paris" ;;
+        11) timezone="Europe/Berlin" ;;
+        12) timezone="Europe/Moscow" ;;
+        13) timezone="America/New_York" ;;
+        14) timezone="America/Los_Angeles" ;;
+        15) timezone="America/Chicago" ;;
+        16) timezone="America/Toronto" ;;
+        17) timezone="Australia/Sydney" ;;
+        18)
+            # 手动输入选项
+            timezone=$(ui_input "请输入时区 (如: Asia/Shanghai):")
+            if [[ -z "$timezone" ]]; then
+                return
+            fi
+            ;;
+        *) return ;;
+    esac
+    
+    if sys_set_timezone "$timezone"; then
+        ui_msg "时区已设置为 $timezone"
+    else
+        ui_msg "时区设置失败" "错误"
     fi
 }
 
