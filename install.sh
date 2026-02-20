@@ -109,7 +109,7 @@ download_scripts() {
         fi
     else
         echo "克隆仓库到 $INSTALL_DIR ..."
-        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR"
+        git clone --depth 1 --progress "$REPO_URL" "$INSTALL_DIR"
     fi
     
     find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \;
