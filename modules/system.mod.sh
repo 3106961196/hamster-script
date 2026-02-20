@@ -1,7 +1,7 @@
 #!/bin/bash
 
 system_menu() {
-    while true;
+    while true; do
         local choice
         choice=$(ui_submenu "系统管理" "请选择功能:"
             "1" "系统信息"
@@ -89,11 +89,11 @@ system_optimize() {
 system_secure() {
     while true; do
         local choice
-        choice=$(ui_submenu "安全加固" "请选择功能:" \
-            "1" "防火墙状态" \
-            "2" "启用防火墙" \
-            "3" "禁用防火墙" \
-            "4" "开放端口" \
+        choice=$(ui_submenu "安全加固" "请选择功能:"
+            "1" "防火墙状态"
+            "2" "启用防火墙"
+            "3" "禁用防火墙"
+            "4" "开放端口"
             "5" "安全检查")
         
         local exit_code=$?
@@ -223,7 +223,7 @@ secure_check() {
 }
 
 system_time_menu() {
-    while true;
+    while true; do
         local choice
         choice=$(ui_submenu "时间管理" "请选择功能:"
             "1" "查看时间"
@@ -366,10 +366,10 @@ time_manual() {
 system_user_menu() {
     while true; do
         local choice
-        choice=$(ui_submenu "用户管理" "请选择功能:" \
-            "1" "用户列表" \
-            "2" "添加用户" \
-            "3" "删除用户" \
+        choice=$(ui_submenu "用户管理" "请选择功能:"
+            "1" "用户列表"
+            "2" "添加用户"
+            "3" "删除用户"
             "4" "修改密码")
         
         local exit_code=$?
@@ -456,10 +456,10 @@ user_password() {
 system_process_menu() {
     while true; do
         local choice
-        choice=$(ui_submenu "进程管理" "请选择功能:" \
-            "1" "进程列表 (CPU)" \
-            "2" "进程列表 (内存)" \
-            "3" "查找进程" \
+        choice=$(ui_submenu "进程管理" "请选择功能:"
+            "1" "进程列表 (CPU)"
+            "2" "进程列表 (内存)"
+            "3" "查找进程"
             "4" "终止进程")
         
         local exit_code=$?
@@ -528,10 +528,10 @@ process_kill() {
 system_disk_menu() {
     while true; do
         local choice
-        choice=$(ui_submenu "磁盘分析" "请选择功能:" \
-            "1" "磁盘使用" \
-            "2" "目录大小" \
-            "3" "大文件查找" \
+        choice=$(ui_submenu "磁盘分析" "请选择功能:"
+            "1" "磁盘使用"
+            "2" "目录大小"
+            "3" "大文件查找"
             "4" "清理空间")
         
         local exit_code=$?
@@ -618,7 +618,7 @@ system_reboot() {
 }
 
 system_ui_settings() {
-    while true;
+    while true; do
         local choice
         choice=$(ui_submenu "界面设置" "请选择功能:"
             "1" "查看当前配置"
