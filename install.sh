@@ -140,6 +140,12 @@ create_directories() {
     mkdir -p /var/lib/hamster-scripts
     mkdir -p /root/cs
     
+    # 复制dialogrc配置文件
+    if [[ -f "$INSTALL_DIR/config/dialogrc" ]]; then
+        cp "$INSTALL_DIR/config/dialogrc" /etc/hamster-scripts/
+        echo "Dialog 配置文件已复制"
+    fi
+    
     echo "目录创建完成"
 }
 

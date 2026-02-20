@@ -1,18 +1,19 @@
 #!/bin/bash
 
 system_menu() {
-    while true; do
+    while true;
         local choice
-        choice=$(ui_submenu "系统管理" "请选择功能:" \
-            "1" "系统信息" \
-            "2" "系统更新" \
-            "3" "系统优化" \
-            "4" "安全加固" \
-            "5" "时间管理" \
-            "6" "用户管理" \
-            "7" "进程管理" \
-            "8" "磁盘分析" \
-            "9" "重启系统")
+        choice=$(ui_submenu "系统管理" "请选择功能:"
+            "1" "系统信息"
+            "2" "系统更新"
+            "3" "系统优化"
+            "4" "安全加固"
+            "5" "时间管理"
+            "6" "用户管理"
+            "7" "进程管理"
+            "8" "磁盘分析"
+            "9" "界面设置"
+            "10" "重启系统")
         
         local exit_code=$?
         
@@ -29,7 +30,8 @@ system_menu() {
             6) system_user_menu ;;
             7) system_process_menu ;;
             8) system_disk_menu ;;
-            9) system_reboot ;;
+            9) system_ui_settings ;;
+            10) system_reboot ;;
         esac
     done
 }
@@ -613,4 +615,70 @@ system_reboot() {
         ui_info "系统将在 3 秒后重启..."
         sys_reboot 3
     fi
+}
+
+system_ui_settings() {
+    while true;
+        local choice
+        choice=$(ui_submenu "界面设置" "请选择功能:"
+            "1" "查看当前配置"
+            "2" "重置为默认配置"
+            "3" "自定义颜色"
+            "4" "查看美化效果")
+        
+        local exit_code=$?
+        
+        if [[ $exit_code -ne 0 ]] || [[ "$choice" == "b" ]]; then
+            break
+        fi
+        
+        case "$choice" in
+            1) ui_settings_show ;;
+            2) ui_settings_reset ;;
+            3) ui_settings_custom ;;
+            4) ui_settings_preview ;;
+        esac
+    done
+}
+
+ui_settings_show() {
+    local dialogrc="${CONFIG[config_dir]}/dialogrc"
+    if [[ -f "$dialogrc" ]]; then
+        ui_textbox "$dialogrc" "Dialog 配置"
+    else
+        ui_msg "配置文件不存在" "错误"
+    fi
+}
+
+ui_settings_reset() {
+    if ui_confirm "确定要重置为默认配置吗？"; then
+        local default_config="$PROJECT_ROOT/config/dialogrc"
+        if [[ -f "$default_config" ]]; then
+            cp "$default_config" "${CONFIG[config_dir]}/dialogrc"
+            ui_msg "配置已重置为默认值"
+        else
+            ui_msg "默认配置文件不存在" "错误"
+        fi
+    fi
+}
+
+ui_settings_custom() {
+    local dialogrc="${CONFIG[config_dir]}/dialogrc"
+    if [[ ! -f "$dialogrc" ]]; then
+        ui_msg "配置文件不存在，请先重置为默认配置" "错误"
+        return
+    fi
+    
+    local temp_config=$(mktemp)
+    cp "$dialogrc" "$temp_config"
+    
+    # 这里可以添加更复杂的颜色自定义功能
+    ui_msg "自定义功能开发中\n\n当前版本仅支持重置默认配置"
+    
+    rm -f "$temp_config"
+}
+
+ui_settings_preview() {
+    # 显示一个预览对话框
+    ui_msg "🎨 界面美化效果预览\n\n当前使用的是 Hamster Script 美化配置\n\n- 绿色边框和蓝色标题\n- 深色背景和白色文字\n- 橙色激活按钮\n- 阴影效果边框\n\n效果如何？" "美化预览"
 }

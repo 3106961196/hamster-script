@@ -1,0 +1,32 @@
+# Dialog 配置文件
+# 用于美化 Hamster Script 的界面
+
+# 颜色设置
+border_color = "#4CAF50"
+title_color = "#2196F3"
+text_color = "#FFFFFF"
+background_color = "#121212"
+button_active_color = "#FF9800"
+button_inactive_color = "#666666"
+inputbox_color = "#333333"
+
+# 边框样式
+border_style = "shadow"
+
+# 按钮样式
+button_label = "[ %s ]"
+checklist_marker = "[X]"
+checklist_marker_off = "[ ]"
+radiolist_marker = "(*)"
+radiolist_marker_off = "( )"
+
+# 滚动条样式
+scrollbar = "true"
+
+# 其他设置
+use_colors = "true"
+use_shadow = "true"
+auto_exit = "false"
+
+# 字体设置
+# font = "monospace:size=10"
