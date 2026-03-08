@@ -8,8 +8,9 @@ package_menu() {
             "2" "搜索软件" \
             "3" "已装列表" \
             "4" "卸载软件" \
-            "5" "更新软件源" \
-            "6" "升级所有软件")
+            "5" "选择卸载" \
+            "6" "更新软件源" \
+            "7" "升级所有软件")
         
         local exit_code=$?
         
@@ -22,8 +23,9 @@ package_menu() {
             2) package_search ;;
             3) package_list ;;
             4) package_remove ;;
-            5) package_update_sources ;;
-            6) package_upgrade_all ;;
+            5) package_remove_select ;;
+            6) package_update_sources ;;
+            7) package_upgrade_all ;;
         esac
     done
 }
@@ -101,6 +103,50 @@ package_remove() {
             ui_msg "$package_name 卸载成功"
         else
             ui_msg "$package_name 卸载失败" "错误"
+        fi
+    fi
+}
+
+package_remove_select() {
+    local temp_file="${CONFIG[temp_dir]}/installed_packages.txt"
+    pkg_list_installed > "$temp_file" 2>&1
+    
+    if [[ ! -s "$temp_file" ]]; then
+        ui_msg "无法获取已安装软件列表" "错误"
+        return
+    fi
+    
+    local items=()
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            local pkg_name
+            pkg_name=$(echo "$line" | awk '{print $1}')
+            if [[ -n "$pkg_name" ]]; then
+                items+=("$pkg_name" "已安装")
+            fi
+        fi
+    done < "$temp_file"
+    
+    if [[ ${#items[@]} -eq 0 ]]; then
+        ui_msg "没有已安装的软件包"
+        return
+    fi
+    
+    local choice
+    choice=$(ui_submenu "选择卸载" "请选择要卸载的软件包:" "${items[@]}")
+    
+    if [[ -z "$choice" ]] || [[ "$choice" == "b" ]]; then
+        return
+    fi
+    
+    if ui_confirm "确定要卸载 $choice 吗？"; then
+        ui_info "正在卸载 $choice..."
+        
+        local temp_log="${CONFIG[temp_dir]}/package_remove.log"
+        if pkg_remove "$choice" 2>&1 | tee "$temp_log"; then
+            ui_msg "$choice 卸载成功"
+        else
+            ui_msg "$choice 卸载失败" "错误"
         fi
     fi
 }

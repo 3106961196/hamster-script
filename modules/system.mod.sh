@@ -64,7 +64,33 @@ system_update() {
 }
 
 system_optimize() {
-    if ui_confirm "确定要优化系统吗？"; then
+    while true; do
+        local choice
+        choice=$(ui_submenu "系统优化" "请选择功能:"
+            "1" "一键优化 (推荐)"
+            "2" "清理包缓存"
+            "3" "移除无用包"
+            "4" "清理日志"
+            "5" "清理临时文件")
+        
+        local exit_code=$?
+        
+        if [[ $exit_code -ne 0 ]] || [[ "$choice" == "b" ]]; then
+            break
+        fi
+        
+        case "$choice" in
+            1) system_optimize_all ;;
+            2) system_optimize_pkg_cache ;;
+            3) system_optimize_autoremove ;;
+            4) system_optimize_journal ;;
+            5) system_optimize_temp ;;
+        esac
+    done
+}
+
+system_optimize_all() {
+    if ui_confirm "确定要优化系统吗？\n\n将执行:\n- 清理包缓存\n- 移除无用包\n- 清理日志 (7天前)\n- 清理临时文件"; then
         ui_info "正在优化系统..."
         
         local temp_log="${CONFIG[temp_dir]}/system_optimize.log"
@@ -83,6 +109,54 @@ system_optimize() {
         } 2>&1 | tee "$temp_log"
         
         ui_msg "系统优化完成"
+    fi
+}
+
+system_optimize_pkg_cache() {
+    ui_info "正在清理包缓存..."
+    local temp_log="${CONFIG[temp_dir]}/pkg_clean.log"
+    if pkg_clean 2>&1 | tee "$temp_log"; then
+        ui_msg "包缓存清理完成"
+    else
+        ui_msg "包缓存清理失败" "错误"
+    fi
+}
+
+system_optimize_autoremove() {
+    ui_info "正在移除无用包..."
+    local temp_log="${CONFIG[temp_dir]}/autoremove.log"
+    if pkg_autoremove 2>&1 | tee "$temp_log"; then
+        ui_msg "无用包移除完成"
+    else
+        ui_msg "无用包移除失败" "错误"
+    fi
+}
+
+system_optimize_journal() {
+    local days
+    days=$(ui_input "请输入要保留的天数" "7")
+    
+    if [[ ! "$days" =~ ^[0-9]+$ ]]; then
+        ui_msg "天数必须是数字" "错误"
+        return
+    fi
+    
+    ui_info "正在清理 $days 天前的日志..."
+    local temp_log="${CONFIG[temp_dir]}/journal_clean.log"
+    if sys_clean_journal "$days" 2>&1 | tee "$temp_log"; then
+        ui_msg "日志清理完成"
+    else
+        ui_msg "日志清理失败" "错误"
+    fi
+}
+
+system_optimize_temp() {
+    ui_info "正在清理临时文件..."
+    local temp_log="${CONFIG[temp_dir]}/temp_clean.log"
+    if sys_clean_temp 2>&1 | tee "$temp_log"; then
+        ui_msg "临时文件清理完成"
+    else
+        ui_msg "临时文件清理失败" "错误"
     fi
 }
 
@@ -281,7 +355,7 @@ time_show() {
 
 time_set_timezone() {
     local choice
-    choice=$(ui_menu "自定义时区" "请选择时区:"
+    choice=$(ui_submenu "自定义时区" "请选择时区:"
         "1" "Asia/Shanghai (亚洲/上海)"
         "2" "Asia/Beijing (亚洲/北京)"
         "3" "Asia/Tokyo (亚洲/东京)"
@@ -302,7 +376,7 @@ time_set_timezone() {
         "18" "其他 (手动输入)")
     
     local exit_code=$?
-    if [[ $exit_code -ne 0 ]]; then
+    if [[ $exit_code -ne 0 ]] || [[ "$choice" == "b" ]]; then
         return
     fi
     
@@ -369,8 +443,8 @@ system_user_menu() {
         choice=$(ui_submenu "用户管理" "请选择功能:"
             "1" "用户列表"
             "2" "添加用户"
-            "3" "删除用户"
-            "4" "修改密码")
+            "3" "删除用户 (选择)"
+            "4" "修改密码 (选择)")
         
         local exit_code=$?
         
@@ -381,8 +455,8 @@ system_user_menu() {
         case "$choice" in
             1) user_list ;;
             2) user_add ;;
-            3) user_delete ;;
-            4) user_password ;;
+            3) user_delete_select ;;
+            4) user_password_select ;;
         esac
     done
 }
@@ -414,16 +488,44 @@ user_add() {
     fi
 }
 
-user_delete() {
-    local username
-    username=$(ui_input "请输入要删除的用户名:")
+user_select() {
+    local temp_file="${CONFIG[temp_dir]}/user_list_select.txt"
+    cat /etc/passwd | awk -F: '$3 >= 1000 || $3 == 0 {print $1}' > "$temp_file"
     
-    if [[ -z "$username" ]]; then
+    if [[ ! -s "$temp_file" ]]; then
+        ui_msg "无法获取用户列表" "错误"
         return
     fi
     
-    if ! id "$username" &>/dev/null; then
-        ui_msg "用户 $username 不存在" "错误"
+    local items=()
+    while IFS= read -r username; do
+        if [[ -n "$username" ]]; then
+            local uid
+            uid=$(id -u "$username" 2>/dev/null)
+            items+=("$username" "UID: $uid")
+        fi
+    done < "$temp_file"
+    
+    if [[ ${#items[@]} -eq 0 ]]; then
+        ui_msg "没有可操作的用户" "错误"
+        return
+    fi
+    
+    local choice
+    choice=$(ui_submenu "选择用户" "请选择用户:" "${items[@]}")
+    
+    if [[ -z "$choice" ]] || [[ "$choice" == "b" ]]; then
+        return
+    fi
+    
+    echo "$choice"
+}
+
+user_delete_select() {
+    local username
+    username=$(user_select)
+    
+    if [[ -z "$username" ]]; then
         return
     fi
     
@@ -436,16 +538,11 @@ user_delete() {
     fi
 }
 
-user_password() {
+user_password_select() {
     local username
-    username=$(ui_input "请输入要修改密码的用户名:")
+    username=$(user_select)
     
     if [[ -z "$username" ]]; then
-        return
-    fi
-    
-    if ! id "$username" &>/dev/null; then
-        ui_msg "用户 $username 不存在" "错误"
         return
     fi
     
@@ -460,7 +557,8 @@ system_process_menu() {
             "1" "进程列表 (CPU)"
             "2" "进程列表 (内存)"
             "3" "查找进程"
-            "4" "终止进程")
+            "4" "终止进程"
+            "5" "选择终止进程")
         
         local exit_code=$?
         
@@ -473,6 +571,7 @@ system_process_menu() {
             2) process_list_mem ;;
             3) process_find ;;
             4) process_kill ;;
+            5) process_kill_select ;;
         esac
     done
 }
@@ -525,14 +624,58 @@ process_kill() {
     fi
 }
 
+process_kill_select() {
+    local temp_file="${CONFIG[temp_dir]}/process_list.txt"
+    ps aux --sort=-%cpu | head -30 > "$temp_file" 2>&1
+    
+    if [[ ! -s "$temp_file" ]]; then
+        ui_msg "无法获取进程列表" "错误"
+        return
+    fi
+    
+    local items=()
+    while IFS= read -r line; do
+        if [[ -n "$line" ]] && [[ ! "$line" =~ ^USER ]]; then
+            local pid pcpu pmem comm
+            pid=$(echo "$line" | awk '{print $2}')
+            pcpu=$(echo "$line" | awk '{print $3}')
+            pmem=$(echo "$line" | awk '{print $4}')
+            comm=$(echo "$line" | awk '{for(i=11;i<=NF;i++) printf $i " "; print ""}' | xargs)
+            if [[ -n "$pid" ]]; then
+                local desc="CPU:${pcpu}% MEM:${pmem}% - ${comm:0:30}"
+                items+=("$pid" "$desc")
+            fi
+        fi
+    done < "$temp_file"
+    
+    if [[ ${#items[@]} -eq 0 ]]; then
+        ui_msg "没有可显示的进程"
+        return
+    fi
+    
+    local choice
+    choice=$(ui_submenu "选择终止进程" "请选择要终止的进程:" "${items[@]}")
+    
+    if [[ -z "$choice" ]] || [[ "$choice" == "b" ]]; then
+        return
+    fi
+    
+    if ui_confirm "确定要终止进程 $choice 吗？"; then
+        if kill "$choice" 2>&1; then
+            ui_msg "进程 $choice 已终止"
+        else
+            ui_msg "终止进程失败，可能需要 root 权限" "错误"
+        fi
+    fi
+}
+
 system_disk_menu() {
     while true; do
         local choice
         choice=$(ui_submenu "磁盘分析" "请选择功能:"
             "1" "磁盘使用"
             "2" "目录大小"
-            "3" "大文件查找"
-            "4" "清理空间")
+            "3" "大文件查找")
         
         local exit_code=$?
         
@@ -544,7 +687,6 @@ system_disk_menu() {
             1) disk_usage ;;
             2) disk_dir_size ;;
             3) disk_find_large ;;
-            4) disk_clean ;;
         esac
     done
 }
@@ -587,26 +729,6 @@ disk_find_large() {
         fi
     else
         ui_msg "目录不存在" "错误"
-    fi
-}
-
-disk_clean() {
-    if ui_confirm "确定要清理磁盘空间吗？\n\n将执行:\n- 清理包缓存\n- 清理日志\n- 清理临时文件"; then
-        ui_info "正在清理..."
-        
-        local temp_log="${CONFIG[temp_dir]}/disk_clean.log"
-        {
-            echo "=== 清理包缓存 ==="
-            pkg_clean
-            echo ""
-            echo "=== 清理日志 ==="
-            sys_clean_journal 7
-            echo ""
-            echo "=== 清理临时文件 ==="
-            sys_clean_temp
-        } 2>&1 | tee "$temp_log"
-        
-        ui_msg "清理完成"
     fi
 }
 

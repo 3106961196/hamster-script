@@ -33,7 +33,24 @@ backup_create() {
     fi
     
     local backup_dir
-    backup_dir=$(ui_input "请输入要备份的目录" "/home")
+    local use_selector
+    use_selector=$(ui_submenu "选择备份目录" "请选择输入方式:" \
+        "1" "手动输入路径" \
+        "2" "浏览选择目录")
+    
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]] || [[ "$use_selector" == "b" ]]; then
+        return
+    fi
+    
+    case "$use_selector" in
+        1)
+            backup_dir=$(ui_input "请输入要备份的目录" "/home")
+            ;;
+        2)
+            backup_dir=$(ui_select_dir "/" "选择要备份的目录")
+            ;;
+    esac
     
     if [[ -z "$backup_dir" ]]; then
         return
@@ -94,7 +111,24 @@ backup_restore() {
     fi
     
     local restore_dir
-    restore_dir=$(ui_input "请输入恢复目录" "/tmp/restore")
+    local use_selector
+    use_selector=$(ui_submenu "选择恢复目录" "请选择输入方式:" \
+        "1" "手动输入路径" \
+        "2" "浏览选择目录")
+    
+    local exit_code=$?
+    if [[ $exit_code -ne 0 ]] || [[ "$use_selector" == "b" ]]; then
+        return
+    fi
+    
+    case "$use_selector" in
+        1)
+            restore_dir=$(ui_input "请输入恢复目录" "/tmp/restore")
+            ;;
+        2)
+            restore_dir=$(ui_select_dir "/" "选择恢复目录")
+            ;;
+    esac
     
     if [[ -z "$restore_dir" ]]; then
         return
