@@ -1,10 +1,32 @@
 #!/bin/bash
-set -e
 
 REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
+TOTAL_STEPS=6
+CURRENT_STEP=0
+
+show_progress() {
+    local current="$1"
+    local total="$2"
+    local message="$3"
+    local width=50
+    local percent=$((current * 100 / total))
+    local filled=$((current * width / total))
+    local empty=$((width - filled))
+    
+    printf "\r["
+    printf "%${filled}s" | tr ' ' '█'
+    printf "%${empty}s" | tr ' ' '░'
+    printf "] %3d%% - %s" "$percent" "$message"
+    
+    if [[ "$current" -eq "$total" ]]; then
+        echo ""
+    fi
+}
+
 print_banner() {
+    clear
     echo ""
     echo "  _    _           _                   _   _          _   _       _     _   "
     echo " | |  | |         | |                 | \ | |        | | | |     | |   | |  "
@@ -36,19 +58,15 @@ check_os() {
     
     case "$ID" in
         ubuntu|debian)
-            echo "检测到系统: $PRETTY_NAME"
             PKG_MANAGER="apt"
             ;;
         centos|rhel|fedora|rocky|almalinux)
-            echo "检测到系统: $PRETTY_NAME"
             PKG_MANAGER="yum"
             ;;
         arch|manjaro)
-            echo "检测到系统: $PRETTY_NAME"
             PKG_MANAGER="pacman"
             ;;
         alpine)
-            echo "检测到系统: $PRETTY_NAME"
             PKG_MANAGER="apk"
             ;;
         *)
@@ -59,34 +77,31 @@ check_os() {
 }
 
 install_dependencies() {
-    echo ""
-    echo "=== 安装依赖 ==="
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装依赖包..."
     
     local packages="git wget curl tar dialog xz-utils jq sudo tmux"
     
     case "$PKG_MANAGER" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
-            apt update -qq
-            apt install -y -qq $packages fonts-wqy* 2>/dev/null || apt install -y $packages
+            apt update -qq 2>/dev/null
+            apt install -y -qq $packages fonts-wqy* 2>/dev/null || apt install -y $packages >/dev/null 2>&1
             ;;
         yum)
-            yum install -y -q git wget curl tar dialog xz jq sudo tmux
+            yum install -y -q git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
             ;;
         pacman)
-            pacman -S --noconfirm --quiet git wget curl tar dialog xz jq sudo tmux
+            pacman -S --noconfirm --quiet git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
             ;;
         apk)
-            apk add --quiet git wget curl tar dialog xz jq sudo tmux
+            apk add --quiet git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
             ;;
     esac
-    
-    echo "依赖安装完成"
 }
 
 download_scripts() {
-    echo ""
-    echo "=== 下载脚本 ==="
+    CURRENT_STEP=$((CURRENT_STEP + 1))
     
     if [[ -d "$INSTALL_DIR" ]]; then
         if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -98,41 +113,37 @@ download_scripts() {
                 exit 1
             fi
             
-            echo "更新现有安装..."
+            show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "更新现有安装..."
             cd "$INSTALL_DIR"
-            git fetch origin
-            git reset --hard origin/main
-            git clean -f -d
+            git fetch origin >/dev/null 2>&1
+            git reset --hard origin/main >/dev/null 2>&1
+            git clean -f -d >/dev/null 2>&1
         else
             echo "错误: $INSTALL_DIR 已存在但不是 git 仓库"
             exit 1
         fi
     else
-        echo "克隆仓库到 $INSTALL_DIR ..."
-        git clone --depth 1 --progress "$REPO_URL" "$INSTALL_DIR"
+        show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
     fi
     
-    find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \;
-    
-    echo "脚本下载完成"
+    find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null
 }
 
 create_command() {
-    echo ""
-    echo "=== 创建命令 ==="
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "创建 cs 命令..."
     
     cat > /usr/local/bin/cs << 'EOF'
 #!/bin/bash
 bash /cs/bin/cs "$@"
 EOF
     chmod +x /usr/local/bin/cs
-    
-    echo "cs 命令创建成功"
 }
 
 create_directories() {
-    echo ""
-    echo "=== 创建目录 ==="
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "创建配置目录..."
     
     mkdir -p /var/log/hamster-scripts
     mkdir -p /var/backups/hamster-scripts
@@ -140,18 +151,14 @@ create_directories() {
     mkdir -p /var/lib/hamster-scripts
     mkdir -p /root/cs
     
-    # 复制dialogrc配置文件
     if [[ -f "$INSTALL_DIR/config/dialogrc" ]]; then
         cp "$INSTALL_DIR/config/dialogrc" /etc/hamster-scripts/
-        echo "Dialog 配置文件已复制"
     fi
-    
-    echo "目录创建完成"
 }
 
 setup_tmux() {
-    echo ""
-    echo "=== 配置 Tmux ==="
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "配置 Tmux..."
     
     local bashrc="$HOME/.bashrc"
     local auto_tmux='# Hamster Script Auto Tmux
@@ -167,16 +174,16 @@ fi'
     if ! grep -q "Hamster Script Auto Tmux" "$bashrc" 2>/dev/null; then
         echo "" >> "$bashrc"
         echo "$auto_tmux" >> "$bashrc"
-        echo "Tmux 自动启动已配置"
-    else
-        echo "Tmux 已配置"
     fi
 }
 
 print_success() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装完成!"
+    
     echo ""
     echo "========================================"
-    echo "          安装完成!"
+    echo "          🎉 安装完成!"
     echo "========================================"
     echo ""
     echo "使用方法:"
@@ -186,15 +193,19 @@ print_success() {
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo ""
-    
-    # 首次安装时自动校准时区
-    echo "正在校准时区..."
-    if bash "$INSTALL_DIR/bin/cs" timezone; then
-        echo "时区校准完成"
-    else
-        echo "时区校准失败，请手动同步"
+}
+
+sync_timezone() {
+    if command -v timedatectl &>/dev/null; then
+        timedatectl set-ntp true 2>/dev/null || true
+        local timezone
+        if command -v curl &>/dev/null; then
+            timezone=$(curl -s --connect-timeout 3 http://ip-api.com/json 2>/dev/null | grep -oP '"timezone":"\K[^"]+' || echo "")
+        fi
+        if [[ -n "$timezone" ]]; then
+            timedatectl set-timezone "$timezone" 2>/dev/null || true
+        fi
     fi
-    echo ""
 }
 
 main() {
@@ -207,6 +218,8 @@ main() {
     create_directories
     setup_tmux
     print_success
+    
+    sync_timezone
     
     if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
         echo "正在启动 Tmux..."
