@@ -25,6 +25,13 @@ show_progress() {
     fi
 }
 
+show_step() {
+    local step_num="$1"
+    local message="$2"
+    echo ""
+    echo "[$step_num/$TOTAL_STEPS] $message"
+}
+
 print_banner() {
     clear
     echo ""
@@ -75,33 +82,34 @@ check_os() {
 
 install_dependencies() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装依赖包..."
+    show_step "$CURRENT_STEP" "安装依赖包..."
     
     local packages="git wget curl tar xz jq sudo tmux"
     
     case "$PKG_MANAGER" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
-            apt update -qq 2>/dev/null
-            apt install -y -qq $packages fonts-wqy* 2>/dev/null || apt install -y $packages >/dev/null 2>&1
+            apt update -qq
+            apt install -y -qq $packages fonts-wqy* || apt install -y $packages
             ;;
         yum)
-            yum install -y -q git wget curl tar xz jq sudo tmux >/dev/null 2>&1
+            yum install -y -q git wget curl tar xz jq sudo tmux
             ;;
         pacman)
-            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux >/dev/null 2>&1
+            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux
             ;;
         apk)
-            apk add --quiet git wget curl tar xz jq sudo tmux >/dev/null 2>&1
+            apk add --quiet git wget curl tar xz jq sudo tmux
             ;;
     esac
 }
 
 install_fzf() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装 fzf..."
+    show_step "$CURRENT_STEP" "安装 fzf..."
     
     if command -v fzf &>/dev/null; then
+        echo "fzf 已安装，跳过"
         return 0
     fi
     
@@ -122,6 +130,7 @@ install_fzf() {
     local tmp_dir="/tmp/fzf-install"
     mkdir -p "$tmp_dir"
     
+    echo "下载 fzf..."
     local download_ok=false
     if command -v wget &>/dev/null; then
         if wget -q "$fzf_url" -O "$tmp_dir/fzf.tar.gz"; then
@@ -134,8 +143,7 @@ install_fzf() {
     fi
     
     if [[ "$download_ok" != "true" ]]; then
-        echo ""
-        echo "警告: fzf 下载失败，尝试使用包管理器安装..."
+        echo "下载失败，尝试使用包管理器安装..."
         case "$PKG_MANAGER" in
             apt) apt install -y fzf ;;
             yum) yum install -y fzf ;;
@@ -146,12 +154,12 @@ install_fzf() {
         tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir"
         mv "$tmp_dir/fzf" /usr/local/bin/fzf
         chmod +x /usr/local/bin/fzf
+        echo "fzf 安装成功"
     fi
     
     rm -rf "$tmp_dir"
     
     if ! command -v fzf &>/dev/null; then
-        echo ""
         echo "错误: fzf 安装失败，请手动安装"
         echo "  apt install fzf  或  yum install fzf"
         return 1
@@ -192,6 +200,7 @@ ask_backup() {
 
 download_scripts() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_step "$CURRENT_STEP" "下载脚本..."
     
     if [[ -d "$INSTALL_DIR" ]]; then
         if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -199,14 +208,14 @@ download_scripts() {
             current_url=$(cd "$INSTALL_DIR" && git config --get remote.origin.url 2>/dev/null)
             
             if [[ "$current_url" == "$REPO_URL" ]]; then
-                show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "更新现有安装..."
+                echo "更新现有安装..."
                 cd "$INSTALL_DIR"
                 git fetch origin >/dev/null 2>&1
                 git reset --hard origin/main >/dev/null 2>&1
                 git clean -f -d >/dev/null 2>&1
             else
                 if ask_backup "$INSTALL_DIR"; then
-                    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+                    echo "克隆仓库..."
                     git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
                 else
                     exit 0
@@ -214,14 +223,14 @@ download_scripts() {
             fi
         else
             if ask_backup "$INSTALL_DIR"; then
-                show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+                echo "克隆仓库..."
                 git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
             else
                 exit 0
             fi
         fi
     else
-        show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+        echo "克隆仓库..."
         git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
     fi
     
@@ -230,7 +239,7 @@ download_scripts() {
 
 create_command() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "创建 cs 命令..."
+    show_step "$CURRENT_STEP" "创建 cs 命令..."
     
     cat > /usr/local/bin/cs << 'EOF'
 #!/bin/bash
@@ -241,7 +250,7 @@ EOF
 
 create_directories() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "创建配置目录..."
+    show_step "$CURRENT_STEP" "创建配置目录..."
     
     mkdir -p /var/log/hamster-scripts
     mkdir -p /var/backups/hamster-scripts
@@ -257,7 +266,7 @@ create_directories() {
 
 setup_tmux() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "配置 Tmux..."
+    show_step "$CURRENT_STEP" "配置 Tmux..."
     
     local bashrc="$HOME/.bashrc"
     local auto_tmux='# Hamster Script Auto Tmux
@@ -278,7 +287,7 @@ fi'
 
 print_success() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装完成!"
+    show_step "$CURRENT_STEP" "安装完成!"
     
     echo ""
     echo "========================================"
@@ -287,8 +296,7 @@ print_success() {
     echo ""
     echo "使用方法:"
     echo "  cs          - 启动主菜单"
-    echo "  cs update   - 更新脚本"
-    echo "  cs help     - 查看帮助"
+    echo "  cs r        - 更新脚本"
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo ""
