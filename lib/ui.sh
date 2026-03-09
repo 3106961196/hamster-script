@@ -1,30 +1,56 @@
 #!/bin/bash
 
-DIALOG_BACKTITLE="🐹 Hamster Script v${PROJECT_VERSION}"
-DIALOG_WIDTH="${CONFIG[dialog_width]:-60}"
-DIALOG_HEIGHT="${CONFIG[dialog_height]:-15}"
+UI_TITLE="🐹 Hamster Script"
 
 ui_init() {
-    if ! command_exists dialog; then
-        echo "Error: dialog is not installed" >&2
+    if ! command -v fzf &>/dev/null; then
+        echo "错误: fzf 未安装" >&2
         return 1
     fi
-    export DIALOGRC="${CONFIG[config_dir]}/dialogrc"
+    
+    export FZF_DEFAULT_OPTS="
+        --height=80%
+        --layout=reverse
+        --border=rounded
+        --prompt='❯ '
+        --pointer='▶'
+        --marker='✓'
+        --header-first
+        --color=bg+:#363a4f,bg:#24273a,spinner:#f4dbd6,hl:#ed8796
+        --color=fg:#cad3f5,header:#ed8796,info:#c6a0f6,pointer:#f4dbd6
+        --color=marker:#f4dbd6,fg+:#cad3f5,prompt:#c6a0f6,hl+:#ed8796
+    "
 }
 
-ui_menu() {
+ui_select() {
     local title="$1"
     local prompt="${2:-请选择:}"
+    local select_one="${3:-false}"
     shift 2
     local items=("$@")
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "返回" \
-           --menu "$prompt" \
-           $((DIALOG_HEIGHT + 2)) $DIALOG_WIDTH $DIALOG_HEIGHT \
-           "${items[@]}" 2>&1 >/dev/tty
+    local header="$title"
+    local fzf_opts=(
+        --header="$header"
+        --prompt="$prompt "
+        --with-nth=2..
+        --delimiter='\t'
+        --exit-0
+        --bind='enter:become(echo {1})'
+        --bind='esc:become(echo "")'
+    )
+    
+    if [[ "$select_one" == "true" ]]; then
+        fzf_opts+=(--select-1)
+    fi
+    
+    printf "%s\n" "${items[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
+        fzf "${fzf_opts[@]}" | head -1
+}
+
+ui_menu() {
+    ui_select "$1" "${2:-请选择:}" "true" "${@:3}"
 }
 
 ui_submenu() {
@@ -33,73 +59,107 @@ ui_submenu() {
     shift 2
     local items=("$@")
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "返回" \
-           --menu "$prompt" \
-           $((DIALOG_HEIGHT + 2)) $DIALOG_WIDTH $DIALOG_HEIGHT \
-           "${items[@]}" "b" "返回" 2>&1 >/dev/tty
+    local header="$title"
+    
+    {
+        printf "%s\n" "${items[@]}" | \
+            awk 'NR%2==1{key=$0; getline; print key "\t" $0}'
+        printf "b\t返回\n"
+    } | fzf --header="$header" \
+            --prompt="$prompt " \
+            --with-nth=2.. \
+            --delimiter='\t' \
+            --exit-0 \
+            --bind='enter:become(echo {1})' \
+            --bind='esc:become(echo b)' \
+        | head -1
+}
+
+ui_multi_select() {
+    local title="$1"
+    local prompt="${2:-请选择:}"
+    shift 2
+    local items=("$@")
+    
+    local header="$title"
+    
+    printf "%s\n" "${items[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
+        fzf --header="$header" \
+            --prompt="$prompt " \
+            --with-nth=2.. \
+            --delimiter='\t' \
+            --multi \
+            --exit-0 \
+            --bind='enter:become(echo {1})' \
+            --bind='esc:become(echo "")' \
+        | head -1
 }
 
 ui_msg() {
     local message="$1"
     local title="${2:-提示}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --msgbox "$message" $DIALOG_HEIGHT $DIALOG_WIDTH
+    echo "$title" | fzf --header="$message" \
+        --prompt="按 Enter 继续 " \
+        --no-input \
+        --height=10 \
+        --exit-0
 }
 
 ui_info() {
     local message="$1"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --infobox "$message" $DIALOG_HEIGHT $DIALOG_WIDTH
+    echo -e "\033[36m$message\033[0m"
+}
+
+ui_success() {
+    local message="$1"
+    echo -e "\033[32m✓ $message\033[0m"
+}
+
+ui_error() {
+    local message="$1"
+    echo -e "\033[31m✗ $message\033[0m"
 }
 
 ui_input() {
     local prompt="$1"
     local default="${2:-}"
-    local title="${3:-输入}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "取消" \
-           --inputbox "$prompt" $DIALOG_HEIGHT $DIALOG_WIDTH "$default" 2>&1 >/dev/tty
-}
-
-ui_password() {
-    local prompt="$1"
-    local title="${2:-输入密码}"
+    local result
+    result=$(echo "" | fzf --header="$prompt" \
+        --prompt="输入: " \
+        --print-query \
+        --height=10 \
+        --exit-0 \
+        --no-input \
+        --query="$default" \
+        | head -1)
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "取消" \
-           --passwordbox "$prompt" $DIALOG_HEIGHT $DIALOG_WIDTH 2>&1 >/dev/tty
+    echo "$result"
 }
 
 ui_confirm() {
     local message="$1"
     local title="${2:-确认}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --yes-label "确定" \
-           --no-label "取消" \
-           --yesno "$message" $DIALOG_HEIGHT $DIALOG_WIDTH
+    local result
+    result=$(printf "y\t是\nn\t否\n" | \
+        fzf --header="$title: $message" \
+            --prompt="选择: " \
+            --with-nth=2.. \
+            --delimiter='\t' \
+            --height=10 \
+            --exit-0 \
+            --bind='enter:become(echo {1})' \
+            --bind='esc:become(echo n)' \
+        | head -1)
+    
+    [[ "$result" == "y" ]]
 }
 
 ui_yesno() {
-    local message="$1"
-    local title="${2:-确认}"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --yesno "$message" $DIALOG_HEIGHT $DIALOG_WIDTH
+    ui_confirm "$@"
 }
 
 ui_textbox() {
@@ -107,138 +167,140 @@ ui_textbox() {
     local title="${2:-内容}"
     
     if [[ ! -f "$file" ]]; then
-        ui_msg "文件不存在: $file" "错误"
+        ui_error "文件不存在: $file"
         return 1
     fi
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --textbox "$file" 20 70
+    local content
+    content=$(cat "$file")
+    
+    echo "$content" | fzf --header="$title" \
+        --prompt="按 Enter 返回 " \
+        --no-input \
+        --exit-0 \
+        --height=80%
 }
 
-ui_tailbox() {
-    local file="$1"
-    local title="${2:-日志}"
+ui_text() {
+    local content="$1"
+    local title="${2:-内容}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --tailbox "$file" 20 70
+    echo "$content" | fzf --header="$title" \
+        --prompt="按 Enter 返回 " \
+        --no-input \
+        --exit-0 \
+        --height=80%
 }
 
-ui_checklist() {
-    local title="$1"
-    local prompt="$2"
-    shift 2
-    local items=("$@")
+ui_select_file() {
+    local start_dir="${1:-.}"
+    local title="${2:-选择文件}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "取消" \
-           --checklist "$prompt" \
-           $((DIALOG_HEIGHT + 4)) $DIALOG_WIDTH $DIALOG_HEIGHT \
-           "${items[@]}" 2>&1 >/dev/tty
+    local result
+    result=$(find "$start_dir" -type f 2>/dev/null | \
+        fzf --header="$title" \
+            --prompt="选择文件: " \
+            --exit-0)
+    
+    echo "$result"
 }
 
-ui_radiolist() {
-    local title="$1"
-    local prompt="$2"
-    shift 2
-    local items=("$@")
+ui_select_dir() {
+    local start_dir="${1:-.}"
+    local title="${2:-选择目录}"
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --ok-label "确定" \
-           --cancel-label "取消" \
-           --radiolist "$prompt" \
-           $((DIALOG_HEIGHT + 4)) $DIALOG_WIDTH $DIALOG_HEIGHT \
-           "${items[@]}" 2>&1 >/dev/tty
-}
-
-ui_form() {
-    local title="$1"
-    local prompt="$2"
-    shift 2
-    local items=("$@")
+    local result
+    result=$(find "$start_dir" -type d 2>/dev/null | \
+        fzf --header="$title" \
+            --prompt="选择目录: " \
+            --exit-0)
     
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --form "$prompt" \
-           $((DIALOG_HEIGHT + 6)) $DIALOG_WIDTH $DIALOG_HEIGHT \
-           "${items[@]}" 2>&1 >/dev/tty
-}
-
-ui_gauge() {
-    local title="$1"
-    local prompt="$2"
-    local percent="$3"
-    
-    echo "$percent" | dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --gauge "$prompt" $DIALOG_HEIGHT $DIALOG_WIDTH 0
+    echo "$result"
 }
 
 ui_pause() {
-    local message="${1:-按任意键继续...}"
+    local message="${1:-按 Enter 继续...}"
     read -r -p "$message" -n 1 -s
     echo ""
 }
 
-ui_wait() {
-    local message="${1:-请稍候...}"
-    local pid="$2"
-    
-    (
-        while kill -0 "$pid" 2>/dev/null; do
-            echo "XXX"
-            echo "$message"
-            echo "XXX"
-            sleep 1
-        done
-    ) | dialog --backtitle "$DIALOG_BACKTITLE" \
-               --title "请稍候" \
-               --gauge "$message" $DIALOG_HEIGHT $DIALOG_WIDTH 0
-}
-
-ui_select_file() {
-    local start_dir="${1:-/}"
-    local title="${2:-选择文件}"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --fselect "$start_dir" 15 60 2>&1 >/dev/tty
-}
-
-ui_select_dir() {
-    local start_dir="${1:-/}"
-    local title="${2:-选择目录}"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --dselect "$start_dir" 15 60 2>&1 >/dev/tty
-}
-
-ui_calendar() {
-    local title="${1:-选择日期}"
-    local default_date="${2:-$(date +%Y-%m-%d)}"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --calendar "选择日期" 0 0 \
-           ${default_date//-/ } 2>&1 >/dev/tty
-}
-
-ui_timebox() {
-    local title="${1:-选择时间}"
-    local default_time="${2:-$(date +%H:%M:%S)}"
-    
-    dialog --backtitle "$DIALOG_BACKTITLE" \
-           --title "$title" \
-           --timebox "选择时间" 0 0 \
-           ${default_time//:/ } 2>&1 >/dev/tty
-}
-
 ui_clear() {
     clear
+}
+
+ui_spinner() {
+    local pid="$1"
+    local message="${2:-处理中...}"
+    local spin='⣾⣽⣻⢿⡿⣟⣯⣷'
+    local i=0
+    
+    while kill -0 "$pid" 2>/dev/null; do
+        i=$(( (i+1) % 8 ))
+        printf "\r${spin:$i:1} $message"
+        sleep 0.1
+    done
+    printf "\r"
+}
+
+ui_loading() {
+    local message="${1:-加载中...}"
+    local pid="$2"
+    
+    if [[ -n "$pid" ]]; then
+        ui_spinner "$pid" "$message"
+    else
+        echo "$message"
+    fi
+}
+
+ui_table() {
+    local title="$1"
+    shift
+    local data=("$@")
+    
+    printf "%s\n" "${data[@]}" | \
+        fzf --header="$title" \
+            --prompt="按 Enter 返回 " \
+            --no-input \
+            --exit-0 \
+            --height=80%
+}
+
+ui_search() {
+    local title="$1"
+    local prompt="${2:-搜索:}"
+    shift 2
+    local items=("$@")
+    
+    local header="$title (输入关键词搜索)"
+    
+    printf "%s\n" "${items[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
+        fzf --header="$header" \
+            --prompt="$prompt " \
+            --with-nth=2.. \
+            --delimiter='\t' \
+            --exit-0 \
+            --bind='enter:become(echo {1})' \
+            --bind='esc:become(echo "")' \
+        | head -1
+}
+
+ui_action() {
+    local title="$1"
+    shift
+    local actions=("$@")
+    
+    local header="$title"
+    
+    printf "%s\n" "${actions[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
+        fzf --header="$header" \
+            --prompt="操作: " \
+            --with-nth=2.. \
+            --delimiter='\t' \
+            --exit-0 \
+            --bind='enter:become(echo {1})' \
+            --bind='esc:become(echo "")' \
+        | head -1
 }

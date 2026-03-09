@@ -28,29 +28,53 @@ declare -A CONFIG=(
     [config_dir]="/etc/${PROJECT_NAME}"
     [data_dir]="/var/lib/${PROJECT_NAME}"
     [work_dir]="/root/cs"
-    [dialog_width]="60"
-    [dialog_height]="15"
+    [app_dir]="${PROJECT_ROOT}/app"
     [install_dir]="/cs"
 )
 
-load_config() {
-    local config_file="${CONFIG[config_dir]}/main.conf"
-    local user_config="$HOME/.config/${PROJECT_NAME}/main.conf"
+parse_yaml() {
+    local file="$1"
+    local prefix="$2"
     
-    for file in "$config_file" "$user_config"; do
-        if [[ -f "$file" ]]; then
-            while IFS='=' read -r key value || [[ -n "$key" ]]; do
-                [[ "$key" =~ ^[[:space:]]*# ]] && continue
-                [[ -z "$key" ]] && continue
-                key="${key//[[:space:]]/}"
-                value="${value#[[:space:]]}"
-                value="${value%[[:space:]]}"
-                if [[ -n "$key" && -n "$value" ]]; then
-                    CONFIG[$key]="$value"
-                fi
-            done < "$file"
+    if [[ ! -f "$file" ]]; then
+        return
+    fi
+    
+    while IFS= read -r line || [[ -n "$line" ]]; do
+        line=$(echo "$line" | sed 's/[[:space:]]*$//')
+        
+        [[ "$line" =~ ^[[:space:]]*# ]] && continue
+        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        
+        if [[ "$line" =~ ^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*:[[:space:]]*(.*)$ ]]; then
+            local key="${BASH_REMATCH[1]}"
+            local value="${BASH_REMATCH[2]}"
+            
+            value="${value#\"}"
+            value="${value%\"}"
+            value="${value#\'}"
+            value="${value%\'}"
+            value="${value%[[:space:]]}"
+            
+            if [[ -n "$prefix" ]]; then
+                key="${prefix}_${key}"
+            fi
+            
+            if [[ -n "$key" && -n "$value" ]]; then
+                CONFIG[$key]="$value"
+            fi
         fi
-    done
+    done < "$file"
+}
+
+load_config() {
+    local default_config="${PROJECT_ROOT}/config/config.yaml"
+    local system_config="${CONFIG[config_dir]}/config.yaml"
+    local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
+    
+    parse_yaml "$default_config"
+    parse_yaml "$system_config"
+    parse_yaml "$user_config"
 }
 
 get_config() {
@@ -65,11 +89,27 @@ set_config() {
     CONFIG[$key]="$value"
 }
 
+save_user_config() {
+    local user_config_dir="$HOME/.config/${PROJECT_NAME}"
+    local user_config="$user_config_dir/config.yaml"
+    
+    mkdir -p "$user_config_dir"
+    
+    {
+        echo "# Hamster Script User Config"
+        echo "# Generated at $(date '+%Y-%m-%d %H:%M:%S')"
+        echo ""
+        for key in "${!CONFIG[@]}"; do
+            echo "$key: ${CONFIG[$key]}"
+        done
+    } > "$user_config"
+}
+
 ensure_dirs() {
-    local dirs=("log_dir" "backup_dir" "temp_dir" "data_dir")
+    local dirs=("log_dir" "backup_dir" "temp_dir" "data_dir" "app_dir")
     for dir_key in "${dirs[@]}"; do
         local dir="${CONFIG[$dir_key]}"
-        if [[ ! -d "$dir" ]]; then
+        if [[ -n "$dir" && ! -d "$dir" ]]; then
             mkdir -p "$dir" 2>/dev/null || true
         fi
     done
@@ -112,6 +152,7 @@ init_core() {
     load_config
     ensure_dirs
     load_all_libs
+    ui_init
 }
 
 command_exists() {
@@ -176,4 +217,14 @@ trap_add() {
     else
         trap "$handler" EXIT
     fi
+}
+
+run_async() {
+    local message="$1"
+    shift
+    "$@" &
+    local pid=$!
+    ui_spinner "$pid" "$message"
+    wait "$pid"
+    return $?
 }

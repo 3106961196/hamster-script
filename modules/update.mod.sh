@@ -1,70 +1,88 @@
 #!/bin/bash
 
-module_update() {
-    ui_clear
+update_menu() {
+    local current_version latest_version
+    current_version="$PROJECT_VERSION"
     
-    log_section "更新脚本"
+    ui_info "正在检查更新..."
+    latest_version=$(update_check_latest 2>/dev/null)
     
-    if [[ ! -d "$PROJECT_ROOT/.git" ]]; then
-        log_error "脚本不是 git 仓库，无法更新"
-        ui_pause "按任意键返回..."
-        return 1
+    local status
+    if [[ -n "$latest_version" ]] && [[ "$latest_version" != "$current_version" ]]; then
+        status="⬆️ 有新版本: $latest_version"
+    else
+        status="✅ 已是最新版本"
     fi
     
-    log_info "正在检查更新..."
+    local choice
+    choice=$(ui_submenu "🔄 脚本更新" "当前版本: $current_version\n$status" \
+        "1" "立即更新" \
+        "2" "查看更新日志" \
+        "3" "检查更新")
+    
+    case "$choice" in
+        1) update_do ;;
+        2) update_changelog ;;
+        3) update_check ;;
+    esac
+}
+
+update_check() {
+    ui_info "正在检查更新..."
+    
+    local latest_version
+    latest_version=$(update_check_latest 2>/dev/null)
+    
+    if [[ -z "$latest_version" ]]; then
+        ui_msg "无法检查更新，请检查网络连接" "错误"
+        return
+    fi
+    
+    if [[ "$latest_version" == "$PROJECT_VERSION" ]]; then
+        ui_msg "当前已是最新版本: $PROJECT_VERSION" "提示"
+    else
+        ui_msg "发现新版本: $latest_version\n当前版本: $PROJECT_VERSION" "更新可用"
+    fi
+}
+
+update_do() {
+    if ! ui_confirm "确定要更新脚本吗？"; then
+        return
+    fi
+    
+    ui_info "正在更新脚本..."
     
     cd "$PROJECT_ROOT"
     
-    local current_branch
-    current_branch=$(git branch --show-current 2>/dev/null || echo "main")
-    
-    git fetch origin "$current_branch" 2>&1
-    
-    if [[ $? -ne 0 ]]; then
-        log_error "网络连接失败，无法检查更新"
-        ui_pause "按任意键返回..."
-        return 1
-    fi
-    
-    local local_commit remote_commit
-    local_commit=$(git rev-parse HEAD 2>/dev/null)
-    remote_commit=$(git rev-parse "origin/$current_branch" 2>/dev/null)
-    
-    if [[ -z "$local_commit" || -z "$remote_commit" ]]; then
-        log_error "无法获取提交信息"
-        ui_pause "按任意键返回..."
-        return 1
-    fi
-    
-    if [[ "$local_commit" == "$remote_commit" ]]; then
-        log_success "脚本已是最新版本"
-        ui_pause "按任意键返回..."
-        return 0
-    fi
-    
-    log_info "发现新版本，正在更新..."
-    
-    git reset --hard HEAD 2>&1
-    git clean -f -d 2>&1
-    
-    if git pull --rebase origin "$current_branch" 2>&1; then
-        log_success "更新成功"
-        
-        # 确保所有脚本都有执行权限
-        find "$PROJECT_ROOT" -type f -name "*.sh" -exec chmod +x {} \;
-        
-        # 特别确保bin/cs有执行权限
-        chmod +x "$PROJECT_ROOT/bin/cs" 2>&1
-        
-        echo ""
-        log_info "重启脚本以应用更新..."
-        ui_pause "按任意键重启..."
-        
-        # 使用绝对路径执行
-        exec "$PROJECT_ROOT/bin/cs"
+    if [[ -d ".git" ]]; then
+        if git fetch origin && git reset --hard origin/main && git clean -f -d; then
+            ui_success "脚本更新成功！"
+            ui_msg "请重新运行脚本以使用新版本" "提示"
+            exit 0
+        else
+            ui_error "更新失败"
+        fi
     else
-        log_error "更新失败"
-        ui_pause "按任意键返回..."
-        return 1
+        ui_msg "非 Git 安装，请手动更新" "提示"
     fi
+}
+
+update_changelog() {
+    ui_info "正在获取更新日志..."
+    
+    local changelog
+    changelog=$(curl -sL "https://raw.githubusercontent.com/3106961196/hamster-script/main/CHANGELOG.md" 2>/dev/null | head -100)
+    
+    if [[ -z "$changelog" ]]; then
+        ui_msg "无法获取更新日志" "提示"
+        return
+    fi
+    
+    ui_text "$changelog" "📋 更新日志"
+}
+
+update_check_latest() {
+    local version
+    version=$(curl -sL "https://raw.githubusercontent.com/3106961196/hamster-script/main/lib/core.sh" 2>/dev/null | grep "PROJECT_VERSION=" | head -1 | cut -d'"' -f2)
+    echo "$version"
 }

@@ -1,275 +1,467 @@
 #!/bin/bash
 
 PROJECTS_CONFIG="${CONFIG[config_dir]}/projects.yaml"
-PROJECTS_DEFAULT="$PROJECT_ROOT/config/projects.yaml"
-PROJECTS_DATA="${CONFIG[data_dir]}/projects"
+PROJECTS_DATA="${CONFIG[data_dir]}/projects.json"
 
 project_menu() {
     while true; do
         local choice
-        choice=$(ui_submenu "项目管理" "请选择功能:" \
+        choice=$(ui_submenu "📁 项目管理" "请选择功能:" \
             "1" "安装项目" \
-            "2" "项目列表" \
-            "3" "删除项目" \
-            "4" "项目配置")
-        
-        local exit_code=$?
-        
-        if [[ $exit_code -ne 0 ]] || [[ "$choice" == "b" ]]; then
-            break
-        fi
+            "2" "已装项目")
         
         case "$choice" in
             1) project_install ;;
             2) project_list ;;
-            3) project_delete ;;
-            4) project_config ;;
+            b) break ;;
         esac
     done
 }
 
 project_install() {
-    if ! command_exists yq; then
-        ui_info "正在安装 yq..."
-        local yq_url="https://github.com/mikefarah/yq/releases/latest/download/yq_linux_amd64"
-        if command_exists wget; then
-            wget -q "$yq_url" -O /usr/local/bin/yq && chmod +x /usr/local/bin/yq
-        elif command_exists curl; then
-            curl -sL "$yq_url" -o /usr/local/bin/yq && chmod +x /usr/local/bin/yq
-        fi
-        
-        if ! command_exists yq; then
-            ui_msg "yq 安装失败" "错误"
-            return 1
-        fi
-    fi
-    
-    if [[ ! -f "$PROJECTS_CONFIG" ]]; then
-        if [[ -f "$PROJECTS_DEFAULT" ]]; then
-            cp "$PROJECTS_DEFAULT" "$PROJECTS_CONFIG"
-        else
-            ui_msg "项目配置文件不存在" "错误"
-            return 1
-        fi
-    fi
-    
-    local project_count
-    project_count=$(yq '.projects | length' "$PROJECTS_CONFIG" 2>/dev/null || echo "0")
-    
-    if [[ "$project_count" -eq 0 ]]; then
-        ui_msg "没有可安装的项目"
-        return 0
-    fi
-    
     local items=()
-    local i=1
-    while [[ $i -le $project_count ]]; do
-        local name
-        name=$(yq ".projects[$((i-1))].name" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
-        if [[ -n "$name" && "$name" != "null" ]]; then
-            items+=("$i" "$name")
-        fi
-        ((i++))
-    done
+    
+    items+=("preset" "📦 预置项目")
+    items+=("git" "📥 Git 仓库")
+    items+=("archive" "📦 压缩包 URL")
+    
+    local install_type
+    install_type=$(ui_select "📁 安装项目" "选择安装方式:" "${items[@]}")
+    
+    case "$install_type" in
+        preset) project_install_preset ;;
+        git) project_install_git ;;
+        archive) project_install_archive ;;
+    esac
+}
+
+project_install_preset() {
+    local items=()
+    
+    if [[ -f "$PROJECTS_CONFIG" ]]; then
+        while IFS= read -r line; do
+            if [[ "$line" =~ ^[[:space:]]*-[[:space:]]*name:[[:space:]]*(.*) ]]; then
+                local name="${BASH_REMATCH[1]}"
+                name=$(echo "$name" | tr -d '"' | tr -d "'")
+                items+=("$name" "预置项目")
+            fi
+        done < "$PROJECTS_CONFIG"
+    fi
     
     if [[ ${#items[@]} -eq 0 ]]; then
-        ui_msg "没有可安装的项目"
-        return 0
+        items+=("napcat" "QQ机器人框架")
     fi
     
-    local choice
-    choice=$(ui_submenu "安装项目" "请选择要安装的项目:" "${items[@]}")
-    
-    if [[ -z "$choice" ]] || [[ "$choice" == "b" ]]; then
-        return 0
+    if [[ ${#items[@]} -eq 0 ]]; then
+        ui_msg "没有可用的预置项目" "提示"
+        return
     fi
     
-    local idx=$((choice - 1))
-    local name url target pre post
+    local selected
+    selected=$(ui_select "📦 预置项目" "选择要安装的项目:" "${items[@]}")
     
-    name=$(yq ".projects[$idx].name" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
-    url=$(yq ".projects[$idx].url" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
-    target=$(yq ".projects[$idx].target" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
-    pre=$(yq ".projects[$idx].pre" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
-    post=$(yq ".projects[$idx].post" "$PROJECTS_CONFIG" 2>/dev/null | sed 's/^"//;s/"$//')
+    [[ -z "$selected" ]] && return
     
-    local project_dir="$target/$name"
-    
-    if [[ -d "$project_dir" ]]; then
-        if ! ui_confirm "项目 $name 已存在，是否重新安装？"; then
-            return 0
-        fi
-    else
-        if ! ui_confirm "确定要安装项目 $name 吗？"; then
-            return 0
-        fi
+    if project_is_installed "$selected"; then
+        ui_msg "$selected 已经安装" "提示"
+        return
     fi
     
-    ui_clear
-    
-    log_section "安装项目"
-    log_info "项目名称: $name"
-    log_info "下载地址: $url"
-    log_info "安装目录: $target"
-    echo ""
-    
-    if [[ -n "$pre" && "$pre" != "null" ]]; then
-        log_info "检查依赖..."
-        IFS=',' read -ra deps <<< "$pre"
-        for dep in "${deps[@]}"; do
-            dep=$(trim "$dep")
-            if [[ -n "$dep" ]]; then
-                if ! command_exists "$dep"; then
-                    log_info "安装依赖: $dep"
-                    pkg_ensure_installed "$dep"
-                fi
-            fi
-        done
-    fi
-    
-    log_info "下载项目..."
-    ensure_dir "$target"
-    
-    if [[ "$url" == git@* ]] || [[ "$url" == https://*git* ]]; then
-        if [[ -d "$project_dir" ]]; then
-            rm -rf "$project_dir"
-        fi
-        
-        if git clone --depth 1 "$url" "$project_dir" 2>&1; then
-            log_success "下载完成"
-        else
-            log_error "下载失败"
-            ui_pause "按任意键返回..."
-            return 1
-        fi
-    else
-        source "$UTILS_DIR/download.sh"
-        if ! download "$url" "$target" "$name"; then
-            log_error "下载失败"
-            ui_pause "按任意键返回..."
-            return 1
-        fi
-    fi
-    
-    if [[ -n "$post" && "$post" != "null" ]]; then
-        log_info "执行安装后命令..."
-        echo ""
-        
-        IFS=';' read -ra cmds <<< "$post"
-        for cmd in "${cmds[@]}"; do
-            cmd=$(trim "$cmd")
-            if [[ -n "$cmd" ]]; then
-                log_info "执行: $cmd"
-                (cd "$project_dir" && eval "$cmd")
-            fi
-        done
-    fi
-    
-    ensure_dir "$PROJECTS_DATA"
-    cat > "$PROJECTS_DATA/$name.json" << EOF
-{
-    "name": "$name",
-    "url": "$url",
-    "target_dir": "$target",
-    "installed_at": "$(date +"%Y-%m-%d %H:%M:%S")",
-    "status": "installed"
+    project_do_install "$selected" "preset"
 }
-EOF
+
+project_install_git() {
+    local repo_url
+    repo_url=$(ui_input "Git 仓库地址" "https://github.com/user/repo.git")
     
-    echo ""
-    log_section "安装完成"
-    log_success "项目 $name 安装成功"
-    echo ""
-    ui_pause "按任意键返回..."
+    [[ -z "$repo_url" ]] && return
+    
+    local project_name
+    project_name=$(basename "$repo_url" .git)
+    
+    project_name=$(ui_input "项目名称" "$project_name")
+    [[ -z "$project_name" ]] && return
+    
+    if project_is_installed "$project_name"; then
+        ui_msg "$project_name 已经安装" "提示"
+        return
+    fi
+    
+    project_do_install "$project_name" "git" "$repo_url"
+}
+
+project_install_archive() {
+    local archive_url
+    archive_url=$(ui_input "压缩包 URL" "")
+    
+    [[ -z "$archive_url" ]] && return
+    
+    local project_name
+    project_name=$(basename "$archive_url" | sed 's/\.[^.]*$//' | sed 's/\.[^.]*$//')
+    
+    project_name=$(ui_input "项目名称" "$project_name")
+    [[ -z "$project_name" ]] && return
+    
+    if project_is_installed "$project_name"; then
+        ui_msg "$project_name 已经安装" "提示"
+        return
+    fi
+    
+    project_do_install "$project_name" "archive" "$archive_url"
+}
+
+project_do_install() {
+    local name="$1"
+    local type="$2"
+    local url="$3"
+    
+    local install_dir="${CONFIG[install_dir]}/app/$name"
+    
+    if [[ -d "$install_dir" ]]; then
+        if ! ui_confirm "目录 $install_dir 已存在，是否覆盖？"; then
+            return
+        fi
+        rm -rf "$install_dir"
+    fi
+    
+    mkdir -p "$install_dir"
+    
+    ui_info "正在安装 $name..."
+    
+    case "$type" in
+        preset)
+            project_install_preset_project "$name" "$install_dir"
+            ;;
+        git)
+            if ! git clone --depth 1 "$url" "$install_dir" 2>&1; then
+                ui_error "克隆仓库失败"
+                rm -rf "$install_dir"
+                return 1
+            fi
+            ;;
+        archive)
+            local temp_file="${CONFIG[temp_dir]}/${name}.tar.gz"
+            if ! wget -q "$url" -O "$temp_file" 2>&1 && ! curl -sL "$url" -o "$temp_file" 2>&1; then
+                ui_error "下载失败"
+                rm -rf "$install_dir" "$temp_file"
+                return 1
+            fi
+            if ! tar -xzf "$temp_file" -C "$install_dir" --strip-components=1 2>&1; then
+                ui_error "解压失败"
+                rm -rf "$install_dir" "$temp_file"
+                return 1
+            fi
+            rm -f "$temp_file"
+            ;;
+    esac
+    
+    project_save_info "$name" "$install_dir" "$type"
+    
+    if [[ -f "$install_dir/package.json" ]]; then
+        if ui_confirm "检测到 Node.js 项目，是否安装依赖？"; then
+            ui_info "正在安装依赖..."
+            (cd "$install_dir" && npm install 2>&1) || \
+            (cd "$install_dir" && pnpm install 2>&1) || \
+            (cd "$install_dir" && yarn install 2>&1)
+        fi
+    fi
+    
+    ui_success "$name 安装成功"
+}
+
+project_install_preset_project() {
+    local name="$1"
+    local install_dir="$2"
+    
+    case "$name" in
+        napcat)
+            if [[ -f "${PROJECT_ROOT}/tools/napcat/install.sh" ]]; then
+                bash "${PROJECT_ROOT}/tools/napcat/install.sh" "$install_dir"
+            else
+                ui_error "NapCat 安装脚本不存在"
+                return 1
+            fi
+            ;;
+        *)
+            ui_error "未知项目: $name"
+            return 1
+            ;;
+    esac
 }
 
 project_list() {
-    local temp_log="${CONFIG[temp_dir]}/project_list.log"
-    
-    {
-        echo "已安装项目:"
-        echo ""
-        
-        if [[ -d "$PROJECTS_DATA" ]]; then
-            local count=0
-            for file in "$PROJECTS_DATA"/*.json; do
-                if [[ -f "$file" ]]; then
-                    local name target time
-                    name=$(grep '"name"' "$file" | cut -d'"' -f4)
-                    target=$(grep '"target_dir"' "$file" | cut -d'"' -f4)
-                    time=$(grep '"installed_at"' "$file" | cut -d'"' -f4)
-                    
-                    echo "$name"
-                    echo "  目录: $target"
-                    echo "  时间: $time"
-                    echo ""
-                    ((count++))
-                fi
-            done
-            
-            if [[ $count -eq 0 ]]; then
-                echo "没有已安装的项目"
-            else
-                echo "共 $count 个项目"
-            fi
-        else
-            echo "没有已安装的项目"
-        fi
-    } > "$temp_log" 2>&1
-    
-    ui_textbox "$temp_log" "项目列表"
-}
-
-project_delete() {
-    if [[ ! -d "$PROJECTS_DATA" ]]; then
-        ui_msg "没有已安装的项目"
-        return
-    fi
-    
     local items=()
-    for file in "$PROJECTS_DATA"/*.json; do
-        if [[ -f "$file" ]]; then
-            local name
-            name=$(grep '"name"' "$file" | cut -d'"' -f4)
-            items+=("$name" "已安装项目")
+    
+    while IFS= read -r line; do
+        if [[ -n "$line" ]]; then
+            local name dir status
+            name=$(echo "$line" | cut -d'|' -f1)
+            dir=$(echo "$line" | cut -d'|' -f2)
+            
+            if project_is_running "$name"; then
+                status="🟢 运行中"
+            else
+                status="🔴 已停止"
+            fi
+            
+            items+=("$name" "$status")
         fi
-    done
+    done < <(project_get_all)
     
     if [[ ${#items[@]} -eq 0 ]]; then
-        ui_msg "没有可删除的项目"
+        ui_msg "暂无已安装的项目" "提示"
         return
     fi
     
-    local choice
-    choice=$(ui_submenu "删除项目" "请选择要删除的项目:" "${items[@]}")
+    local selected
+    selected=$(ui_select "📁 已装项目" "选择项目:" "${items[@]}")
     
-    if [[ -z "$choice" ]] || [[ "$choice" == "b" ]]; then
-        return
+    [[ -z "$selected" ]] && return
+    
+    project_action "$selected"
+}
+
+project_action() {
+    local name="$1"
+    local info
+    info=$(project_get_info "$name")
+    
+    local dir type installed
+    dir=$(echo "$info" | grep "^dir:" | cut -d' ' -f2-)
+    type=$(echo "$info" | grep "^type:" | cut -d' ' -f2-)
+    installed=$(echo "$info" | grep "^installed:" | cut -d' ' -f2-)
+    
+    local is_running
+    is_running=$(project_is_running "$name" && echo "true" || echo "false")
+    
+    local status_text
+    if [[ "$is_running" == "true" ]]; then
+        status_text="🟢 运行中"
+    else
+        status_text="🔴 已停止"
     fi
     
-    if ui_confirm "确定要删除项目 $choice 吗？\n\n这将删除项目目录和配置！"; then
-        local config_file="$PROJECTS_DATA/$choice.json"
-        local target_dir
-        
-        if [[ -f "$config_file" ]]; then
-            target_dir=$(grep '"target_dir"' "$config_file" | cut -d'"' -f4)
-            local project_dir="$target_dir/$choice"
-            
-            if [[ -d "$project_dir" ]]; then
-                rm -rf "$project_dir"
-            fi
-            rm -f "$config_file"
+    local actions
+    if [[ "$is_running" == "true" ]]; then
+        actions=(
+            "stop" "停止"
+            "restart" "重启"
+            "logs" "查看日志"
+            "info" "项目信息"
+            "update" "更新"
+            "uninstall" "卸载"
+        )
+    else
+        actions=(
+            "start" "启动"
+            "info" "项目信息"
+            "update" "更新"
+            "uninstall" "卸载"
+        )
+    fi
+    
+    local action
+    action=$(ui_action "📁 $name ($status_text)" "${actions[@]}")
+    
+    case "$action" in
+        start) project_start "$name" ;;
+        stop) project_stop "$name" ;;
+        restart) project_restart "$name" ;;
+        logs) project_logs "$name" ;;
+        info) project_show_info "$name" ;;
+        update) project_update "$name" ;;
+        uninstall) project_uninstall "$name" ;;
+    esac
+}
+
+project_start() {
+    local name="$1"
+    local info dir
+    info=$(project_get_info "$name")
+    dir=$(echo "$info" | grep "^dir:" | cut -d' ' -f2-)
+    
+    ui_info "正在启动 $name..."
+    
+    if [[ -f "$dir/package.json" ]]; then
+        cd "$dir"
+        if command -v pm2 &>/dev/null; then
+            pm2 start npm --name "$name" 2>&1
+        else
+            nohup npm start > "${CONFIG[log_dir]}/${name}.log" 2>&1 &
         fi
-        
-        ui_msg "项目 $choice 已删除"
+        ui_success "$name 已启动"
+    else
+        ui_error "无法确定如何启动此项目"
     fi
 }
 
-project_config() {
-    if [[ ! -f "$PROJECTS_CONFIG" ]]; then
-        ui_msg "项目配置文件不存在"
+project_stop() {
+    local name="$1"
+    
+    ui_info "正在停止 $name..."
+    
+    if command -v pm2 &>/dev/null; then
+        pm2 stop "$name" 2>&1
+    else
+        pkill -f "$name" 2>&1 || true
+    fi
+    
+    ui_success "$name 已停止"
+}
+
+project_restart() {
+    local name="$1"
+    
+    ui_info "正在重启 $name..."
+    
+    if command -v pm2 &>/dev/null; then
+        pm2 restart "$name" 2>&1
+    else
+        project_stop "$name"
+        sleep 1
+        project_start "$name"
+    fi
+    
+    ui_success "$name 已重启"
+}
+
+project_logs() {
+    local name="$1"
+    local log_file="${CONFIG[log_dir]}/${name}.log"
+    
+    if [[ -f "$log_file" ]]; then
+        tail -100 "$log_file" | ui_text "📋 $name 日志"
+    elif command -v pm2 &>/dev/null; then
+        pm2 logs "$name" --lines 100 --nostream 2>&1 | ui_text "📋 $name 日志"
+    else
+        ui_msg "未找到日志文件" "提示"
+    fi
+}
+
+project_show_info() {
+    local name="$1"
+    local info
+    info=$(project_get_info "$name")
+    
+    local dir type installed
+    dir=$(echo "$info" | grep "^dir:" | cut -d' ' -f2-)
+    type=$(echo "$info" | grep "^type:" | cut -d' ' -f2-)
+    installed=$(echo "$info" | grep "^installed:" | cut -d' ' -f2-)
+    
+    local status
+    if project_is_running "$name"; then
+        status="🟢 运行中"
+    else
+        status="🔴 已停止"
+    fi
+    
+    local content
+    content="项目名称: $name
+状态: $status
+类型: $type
+目录: $dir
+安装时间: $installed"
+    
+    ui_text "$content" "📁 项目信息"
+}
+
+project_update() {
+    local name="$1"
+    local info dir type
+    info=$(project_get_info "$name")
+    dir=$(echo "$info" | grep "^dir:" | cut -d' ' -f2-)
+    type=$(echo "$info" | grep "^type:" | cut -d' ' -f2-)
+    
+    if [[ "$type" == "git" ]] && [[ -d "$dir/.git" ]]; then
+        ui_info "正在更新 $name..."
+        cd "$dir"
+        git pull 2>&1
+        ui_success "$name 更新完成"
+    else
+        ui_msg "此项目不支持自动更新" "提示"
+    fi
+}
+
+project_uninstall() {
+    local name="$1"
+    
+    if ! ui_confirm "确定要卸载 $name 吗？\n这将删除项目目录和所有数据"; then
         return
     fi
     
-    ui_textbox "$PROJECTS_CONFIG" "项目配置"
+    local info dir
+    info=$(project_get_info "$name")
+    dir=$(echo "$info" | grep "^dir:" | cut -d' ' -f2-)
+    
+    project_stop "$name" 2>/dev/null || true
+    
+    rm -rf "$dir"
+    project_remove_info "$name"
+    
+    ui_success "$name 已卸载"
+}
+
+project_is_installed() {
+    local name="$1"
+    [[ -f "${CONFIG[data_dir]}/projects/${name}.info" ]]
+}
+
+project_is_running() {
+    local name="$1"
+    
+    if command -v pm2 &>/dev/null; then
+        pm2 describe "$name" &>/dev/null
+    else
+        pgrep -f "$name" &>/dev/null
+    fi
+}
+
+project_save_info() {
+    local name="$1"
+    local dir="$2"
+    local type="$3"
+    
+    local info_dir="${CONFIG[data_dir]}/projects"
+    mkdir -p "$info_dir"
+    
+    cat > "${info_dir}/${name}.info" << EOF
+name: $name
+dir: $dir
+type: $type
+installed: $(date '+%Y-%m-%d %H:%M:%S')
+EOF
+}
+
+project_get_info() {
+    local name="$1"
+    local info_file="${CONFIG[data_dir]}/projects/${name}.info"
+    
+    if [[ -f "$info_file" ]]; then
+        cat "$info_file"
+    else
+        echo "name: $name"
+        echo "dir: ${CONFIG[install_dir]}/app/$name"
+        echo "type: unknown"
+        echo "installed: unknown"
+    fi
+}
+
+project_remove_info() {
+    local name="$1"
+    rm -f "${CONFIG[data_dir]}/projects/${name}.info"
+}
+
+project_get_all() {
+    local info_dir="${CONFIG[data_dir]}/projects"
+    
+    if [[ -d "$info_dir" ]]; then
+        for file in "$info_dir"/*.info; do
+            if [[ -f "$file" ]]; then
+                local name dir
+                name=$(grep "^name:" "$file" | cut -d' ' -f2-)
+                dir=$(grep "^dir:" "$file" | cut -d' ' -f2-)
+                echo "$name|$dir"
+            fi
+        done
+    fi
 }

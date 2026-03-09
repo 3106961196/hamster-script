@@ -91,10 +91,10 @@ pkg_search() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt search "$package" 2>/dev/null ;;
-        yum) yum search "$package" ;;
-        pacman) pacman -Ss "$package" ;;
-        apk) apk search "$package" ;;
+        apt) apt search "$package" 2>/dev/null | grep -E "^[^/]+/" | sed 's|/[^ ]*||' | head -30 ;;
+        yum) yum search "$package" 2>/dev/null | grep -E "^[^ ]+\." | awk '{print $1}' | head -30 ;;
+        pacman) pacman -Ss "$package" 2>/dev/null | grep -E "^[^/]+/" | sed 's|/.*||' | head -30 ;;
+        apk) apk search "$package" 2>/dev/null | head -30 ;;
         *) return 1 ;;
     esac
 }
@@ -104,9 +104,9 @@ pkg_list_installed() {
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
         apt) dpkg -l | awk '/^ii/ {print $2, $3}' ;;
-        yum) yum list installed ;;
+        yum) rpm -qa --queryformat '%{NAME} %{VERSION}-%{RELEASE}\n' ;;
         pacman) pacman -Q ;;
-        apk) apk info ;;
+        apk) apk info -v | sed 's/-\([0-9].*\)/ \1/' ;;
         *) return 1 ;;
     esac
 }
@@ -115,10 +115,24 @@ pkg_list_upgradable() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt list --upgradable 2>/dev/null ;;
-        yum) yum check-update ;;
-        pacman) pacman -Qu ;;
-        apk) apk version -l '<' ;;
+        apt)
+            apt list --upgradable 2>/dev/null | tail -n +2 | while read -r line; do
+                local name old_ver new_ver
+                name=$(echo "$line" | cut -d'/' -f1)
+                old_ver=$(echo "$line" | awk -F' ' '{print $2}')
+                new_ver=$(echo "$line" | awk -F' ' '{print $3}' | tr -d ']')
+                echo "$name $old_ver $new_ver"
+            done
+            ;;
+        yum)
+            yum check-update --quiet 2>/dev/null | awk '{print $1, $2}' | head -50
+            ;;
+        pacman)
+            pacman -Qu 2>/dev/null | awk '{print $1, $2}' | head -50
+            ;;
+        apk)
+            apk version -l '<' 2>/dev/null | awk '{print $1, $2}' | head -50
+            ;;
         *) return 1 ;;
     esac
 }
@@ -133,6 +147,82 @@ pkg_is_installed() {
         pacman) pacman -Q "$package" &>/dev/null ;;
         apk) apk info -e "$package" &>/dev/null ;;
         *) return 1 ;;
+    esac
+}
+
+pkg_get_version() {
+    local package="$1"
+    local pkg_manager
+    pkg_manager=$(pkg_get_manager)
+    case "$pkg_manager" in
+        apt) dpkg -l "$package" 2>/dev/null | awk '/^ii/ {print $3}' ;;
+        yum) rpm -q "$package" 2>/dev/null | awk -F- '{print $2}' ;;
+        pacman) pacman -Q "$package" 2>/dev/null | awk '{print $2}' ;;
+        apk) apk info -v "$package" 2>/dev/null | sed 's/.*-//' ;;
+        *) echo "unknown" ;;
+    esac
+}
+
+pkg_get_upgradable_version() {
+    local package="$1"
+    local pkg_manager
+    pkg_manager=$(pkg_get_manager)
+    case "$pkg_manager" in
+        apt)
+            apt list --upgradable 2>/dev/null | grep "^$package/" | awk -F' ' '{print $3}' | tr -d ']'
+            ;;
+        yum)
+            yum check-update --quiet "$package" 2>/dev/null | awk '{print $2}'
+            ;;
+        pacman)
+            pacman -Qu "$package" 2>/dev/null | awk '{print $2}'
+            ;;
+        apk)
+            apk version -l '<' "$package" 2>/dev/null | awk '{print $2}'
+            ;;
+        *) echo "" ;;
+    esac
+}
+
+pkg_get_versions() {
+    local package="$1"
+    local pkg_manager
+    pkg_manager=$(pkg_get_manager)
+    case "$pkg_manager" in
+        apt)
+            apt-cache madison "$package" 2>/dev/null | awk -F'|' '{print $2}' | tr -d ' ' | head -10
+            ;;
+        yum)
+            yum --showduplicates list "$package" 2>/dev/null | awk '{print $2}' | head -10
+            ;;
+        pacman)
+            pacman -Si "$package" 2>/dev/null | grep -E "^Version" | awk '{print $3}'
+            ;;
+        apk)
+            apk policy "$package" 2>/dev/null | grep -E "^[0-9]" | head -10
+            ;;
+        *) echo "latest" ;;
+    esac
+}
+
+pkg_show_info() {
+    local package="$1"
+    local pkg_manager
+    pkg_manager=$(pkg_get_manager)
+    case "$pkg_manager" in
+        apt)
+            apt-cache show "$package" 2>/dev/null | head -30
+            ;;
+        yum)
+            yum info "$package" 2>/dev/null
+            ;;
+        pacman)
+            pacman -Si "$package" 2>/dev/null
+            ;;
+        apk)
+            apk info -a "$package" 2>/dev/null
+            ;;
+        *) echo "无法获取软件包信息" ;;
     esac
 }
 
@@ -194,4 +284,16 @@ pkg_ensure_installed() {
     
     log_info "正在安装 $package..."
     pkg_install "$package"
+}
+
+pkg_upgrade_all() {
+    local pkg_manager
+    pkg_manager=$(pkg_get_manager)
+    case "$pkg_manager" in
+        apt) DEBIAN_FRONTEND=noninteractive apt full-upgrade -y -o Dpkg::Options::="--force-confold" ;;
+        yum) yum upgrade -y ;;
+        pacman) pacman -Syu --noconfirm ;;
+        apk) apk upgrade ;;
+        *) return 1 ;;
+    esac
 }

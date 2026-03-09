@@ -26,5 +26,8 @@ ENV/
 env/
 
 # 用户配置文件
-config/project/projects.yaml
-config/user.conf
+config/user.yaml
+config/projects.yaml
+
+# 用户安装的软件目录
+app/

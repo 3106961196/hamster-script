@@ -1,0 +1,60 @@
+# Hamster Script 配置文件
+# 版本: 2.0.0
+
+# 系统路径配置
+log_dir: /var/log/hamster-scripts
+backup_dir: /var/backups/hamster-scripts
+temp_dir: /tmp/hamster-scripts
+config_dir: /etc/hamster-scripts
+data_dir: /var/lib/hamster-scripts
+work_dir: /root/cs
+install_dir: /cs
+
+# 常用软件列表 (用于快速安装)
+common_packages:
+  - name: git
+    desc: 版本控制
+  - name: vim
+    desc: 编辑器
+  - name: htop
+    desc: 系统监控
+  - name: curl
+    desc: 网络工具
+  - name: wget
+    desc: 下载工具
+  - name: tmux
+    desc: 终端复用
+  - name: jq
+    desc: JSON处理
+  - name: tree
+    desc: 目录树
+  - name: ncdu
+    desc: 磁盘分析
+  - name: net-tools
+    desc: 网络工具集
+  - name: nodejs
+    desc: Node.js
+  - name: docker
+    desc: 容器引擎
+
+# 备份配置
+backup:
+  max_count: 10
+  compress: true
+  exclude:
+    - "*.log"
+    - "*.tmp"
+    - "node_modules"
+    - ".git"
+
+# 系统优化配置
+optimize:
+  journal_days: 7
+  clean_temp: true
+  clean_cache: true
+  autoremove: true
+
+# 监控配置
+monitor:
+  refresh_interval: 2
+  top_count: 20

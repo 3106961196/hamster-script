@@ -3,7 +3,7 @@
 REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
-TOTAL_STEPS=6
+TOTAL_STEPS=7
 CURRENT_STEP=0
 
 show_progress() {
@@ -77,7 +77,7 @@ install_dependencies() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装依赖包..."
     
-    local packages="git wget curl tar dialog xz-utils jq sudo tmux"
+    local packages="git wget curl tar xz jq sudo tmux"
     
     case "$PKG_MANAGER" in
         apt)
@@ -86,15 +86,55 @@ install_dependencies() {
             apt install -y -qq $packages fonts-wqy* 2>/dev/null || apt install -y $packages >/dev/null 2>&1
             ;;
         yum)
-            yum install -y -q git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
+            yum install -y -q git wget curl tar xz jq sudo tmux >/dev/null 2>&1
             ;;
         pacman)
-            pacman -S --noconfirm --quiet git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
+            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux >/dev/null 2>&1
             ;;
         apk)
-            apk add --quiet git wget curl tar dialog xz jq sudo tmux >/dev/null 2>&1
+            apk add --quiet git wget curl tar xz jq sudo tmux >/dev/null 2>&1
             ;;
     esac
+}
+
+install_fzf() {
+    CURRENT_STEP=$((CURRENT_STEP + 1))
+    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装 fzf..."
+    
+    if command -v fzf &>/dev/null; then
+        return
+    fi
+    
+    local fzf_version="0.45.0"
+    local fzf_url
+    local arch
+    
+    arch=$(uname -m)
+    case "$arch" in
+        x86_64)  arch="amd64" ;;
+        aarch64) arch="arm64" ;;
+        armv7l)  arch="armv7" ;;
+        *)       arch="amd64" ;;
+    esac
+    
+    fzf_url="https://github.com/junegunn/fzf/releases/download/v${fzf_version}/fzf-${fzf_version}-linux_${arch}.tar.gz"
+    
+    local tmp_dir="/tmp/fzf-install"
+    mkdir -p "$tmp_dir"
+    
+    if command -v wget &>/dev/null; then
+        wget -q "$fzf_url" -O "$tmp_dir/fzf.tar.gz" 2>/dev/null
+    elif command -v curl &>/dev/null; then
+        curl -sL "$fzf_url" -o "$tmp_dir/fzf.tar.gz" 2>/dev/null
+    fi
+    
+    if [[ -f "$tmp_dir/fzf.tar.gz" ]]; then
+        tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir" 2>/dev/null
+        mv "$tmp_dir/fzf" /usr/local/bin/fzf 2>/dev/null
+        chmod +x /usr/local/bin/fzf 2>/dev/null
+    fi
+    
+    rm -rf "$tmp_dir"
 }
 
 ask_backup() {
@@ -185,9 +225,10 @@ create_directories() {
     mkdir -p /etc/hamster-scripts
     mkdir -p /var/lib/hamster-scripts
     mkdir -p /root/cs
+    mkdir -p "$INSTALL_DIR/app"
     
-    if [[ -f "$INSTALL_DIR/config/dialogrc" ]]; then
-        cp "$INSTALL_DIR/config/dialogrc" /etc/hamster-scripts/
+    if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
+        cp "$INSTALL_DIR/config/config.yaml" /etc/hamster-scripts/ 2>/dev/null
     fi
 }
 
@@ -248,6 +289,7 @@ main() {
     check_root
     check_os
     install_dependencies
+    install_fzf
     download_scripts
     create_command
     create_directories
