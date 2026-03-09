@@ -100,6 +100,36 @@ install_dependencies() {
     esac
 }
 
+ask_backup() {
+    local dir="$1"
+    local backup_dir="${dir}.bak.$(date +%Y%m%d%H%M%S)"
+    
+    echo ""
+    echo "检测到 $dir 已存在"
+    if [[ -d "$dir/.git" ]]; then
+        local current_url
+        current_url=$(cd "$dir" && git config --get remote.origin.url 2>/dev/null)
+        if [[ -n "$current_url" ]]; then
+            echo "当前仓库: $current_url"
+        fi
+    else
+        echo "该目录不是 git 仓库"
+    fi
+    echo ""
+    
+    read -p "是否备份并清理？(Y/n): " choice
+    choice=${choice:-y}
+    
+    if [[ "$choice" =~ ^[Yy]$ ]]; then
+        echo "正在备份到 $backup_dir ..."
+        mv "$dir" "$backup_dir"
+        return 0
+    else
+        echo "取消安装"
+        return 1
+    fi
+}
+
 download_scripts() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     
@@ -108,19 +138,27 @@ download_scripts() {
             local current_url
             current_url=$(cd "$INSTALL_DIR" && git config --get remote.origin.url 2>/dev/null)
             
-            if [[ "$current_url" != "$REPO_URL" ]]; then
-                echo "错误: $INSTALL_DIR 不是指定的仓库"
-                exit 1
+            if [[ "$current_url" == "$REPO_URL" ]]; then
+                show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "更新现有安装..."
+                cd "$INSTALL_DIR"
+                git fetch origin >/dev/null 2>&1
+                git reset --hard origin/main >/dev/null 2>&1
+                git clean -f -d >/dev/null 2>&1
+            else
+                if ask_backup "$INSTALL_DIR"; then
+                    show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+                    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
+                else
+                    exit 0
+                fi
             fi
-            
-            show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "更新现有安装..."
-            cd "$INSTALL_DIR"
-            git fetch origin >/dev/null 2>&1
-            git reset --hard origin/main >/dev/null 2>&1
-            git clean -f -d >/dev/null 2>&1
         else
-            echo "错误: $INSTALL_DIR 已存在但不是 git 仓库"
-            exit 1
+            if ask_backup "$INSTALL_DIR"; then
+                show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
+                git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
+            else
+                exit 0
+            fi
         fi
     else
         show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "克隆仓库..."
