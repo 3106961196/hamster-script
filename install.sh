@@ -102,7 +102,7 @@ install_fzf() {
     show_progress "$CURRENT_STEP" "$TOTAL_STEPS" "安装 fzf..."
     
     if command -v fzf &>/dev/null; then
-        return
+        return 0
     fi
     
     local fzf_version="0.45.0"
@@ -122,19 +122,42 @@ install_fzf() {
     local tmp_dir="/tmp/fzf-install"
     mkdir -p "$tmp_dir"
     
+    local download_ok=false
     if command -v wget &>/dev/null; then
-        wget -q "$fzf_url" -O "$tmp_dir/fzf.tar.gz" 2>/dev/null
+        if wget -q "$fzf_url" -O "$tmp_dir/fzf.tar.gz"; then
+            download_ok=true
+        fi
     elif command -v curl &>/dev/null; then
-        curl -sL "$fzf_url" -o "$tmp_dir/fzf.tar.gz" 2>/dev/null
+        if curl -sL "$fzf_url" -o "$tmp_dir/fzf.tar.gz"; then
+            download_ok=true
+        fi
     fi
     
-    if [[ -f "$tmp_dir/fzf.tar.gz" ]]; then
-        tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir" 2>/dev/null
-        mv "$tmp_dir/fzf" /usr/local/bin/fzf 2>/dev/null
-        chmod +x /usr/local/bin/fzf 2>/dev/null
+    if [[ "$download_ok" != "true" ]]; then
+        echo ""
+        echo "警告: fzf 下载失败，尝试使用包管理器安装..."
+        case "$PKG_MANAGER" in
+            apt) apt install -y fzf ;;
+            yum) yum install -y fzf ;;
+            pacman) pacman -S --noconfirm fzf ;;
+            apk) apk add fzf ;;
+        esac
+    elif [[ -f "$tmp_dir/fzf.tar.gz" ]]; then
+        tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir"
+        mv "$tmp_dir/fzf" /usr/local/bin/fzf
+        chmod +x /usr/local/bin/fzf
     fi
     
     rm -rf "$tmp_dir"
+    
+    if ! command -v fzf &>/dev/null; then
+        echo ""
+        echo "错误: fzf 安装失败，请手动安装"
+        echo "  apt install fzf  或  yum install fzf"
+        return 1
+    fi
+    
+    return 0
 }
 
 ask_backup() {
