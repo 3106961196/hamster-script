@@ -30,11 +30,12 @@ ui_select() {
     local items=("$@")
     
     local header="$title"
+    local tab=$'\t'
     local fzf_opts=(
         --header="$header"
         --prompt="$prompt "
         --with-nth=2..
-        --delimiter='\t'
+        --delimiter="$tab"
         --exit-0
         --bind='enter:become(echo {1})'
         --bind='esc:become(echo "")'
@@ -60,6 +61,7 @@ ui_submenu() {
     local items=("$@")
     
     local header="$title"
+    local tab=$'\t'
     
     {
         printf "%s\n" "${items[@]}" | \
@@ -68,7 +70,7 @@ ui_submenu() {
     } | fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter='\t' \
+            --delimiter="$tab" \
             --exit-0 \
             --bind='enter:become(echo {1})' \
             --bind='esc:become(echo b)' \
@@ -82,13 +84,14 @@ ui_multi_select() {
     local items=("$@")
     
     local header="$title"
+    local tab=$'\t'
     
     printf "%s\n" "${items[@]}" | \
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
         fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter='\t' \
+            --delimiter="$tab" \
             --multi \
             --exit-0 \
             --bind='enter:become(echo {1})' \
@@ -143,12 +146,13 @@ ui_confirm() {
     local message="$1"
     local title="${2:-确认}"
     
+    local tab=$'\t'
     local result
     result=$(printf "y\t是\nn\t否\n" | \
         fzf --header="$title: $message" \
             --prompt="选择: " \
             --with-nth=2.. \
-            --delimiter='\t' \
+            --delimiter="$tab" \
             --height=10 \
             --exit-0 \
             --bind='enter:become(echo {1})' \
@@ -273,13 +277,14 @@ ui_search() {
     local items=("$@")
     
     local header="$title (输入关键词搜索)"
+    local tab=$'\t'
     
     printf "%s\n" "${items[@]}" | \
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
         fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter='\t' \
+            --delimiter="$tab" \
             --exit-0 \
             --bind='enter:become(echo {1})' \
             --bind='esc:become(echo "")' \
@@ -292,13 +297,14 @@ ui_action() {
     local actions=("$@")
     
     local header="$title"
+    local tab=$'\t'
     
     printf "%s\n" "${actions[@]}" | \
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
         fzf --header="$header" \
             --prompt="操作: " \
             --with-nth=2.. \
-            --delimiter='\t' \
+            --delimiter="$tab" \
             --exit-0 \
             --bind='enter:become(echo {1})' \
             --bind='esc:become(echo "")' \
