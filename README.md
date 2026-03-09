@@ -154,10 +154,6 @@ module_name_menu() {
 - `pkg_install/pkg_remove/pkg_search` - 包管理
 - `sys_get_info/sys_service_*` - 系统函数
 
-## 版本历史
-
-- v2.0.0 - 重构版本，全新架构
-- v1.0.0 - 初始版本
 
 ## License
 

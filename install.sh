@@ -10,15 +10,15 @@ show_progress() {
     local current="$1"
     local total="$2"
     local message="$3"
-    local width=50
+    local width=40
     local percent=$((current * 100 / total))
     local filled=$((current * width / total))
     local empty=$((width - filled))
     
     printf "\r["
-    printf "%${filled}s" | tr ' ' '█'
-    printf "%${empty}s" | tr ' ' '░'
-    printf "] %3d%% - %s" "$percent" "$message"
+    printf "%${filled}s" | tr ' ' '='
+    printf "%${empty}s" | tr ' ' '-'
+    printf "] %3d%% %s" "$percent" "$message"
     
     if [[ "$current" -eq "$total" ]]; then
         echo ""
@@ -28,16 +28,13 @@ show_progress() {
 print_banner() {
     clear
     echo ""
-    echo "  _    _           _                   _   _          _   _       _     _   "
-    echo " | |  | |         | |                 | \ | |        | | | |     | |   | |  "
-    echo " | |__| |_   _ ___| |_ ___ _ __       |  \| | ___  __| | | | ___ | | __| |  "
-    echo " |  __  | | | / __| __/ _ \ '__|      | . \` |/ _ \/ _\` | | |/ _ \| |/ _\` |  "
-    echo " | |  | | |_| \__ \ ||  __/ |         | |\  |  __/ (_| | | | (_) | | (_| |  "
-    echo " |_|  |_|\__, |___/\__\___|_|         |_| \_|\___|\__,_| |_|\___/|_|\__,_|  "
-    echo "          __/ |                                                              "
-    echo "         |___/                                                               "
+    echo "    (\\_/)"
+    echo "    ( •_•)"
+    echo "    / >🐹< \\"
+    echo "   /     \\"
+    echo "  /       \\"
     echo ""
-    echo "                    Hamster Script Installer v2.0"
+    echo "           Hamster Script Installer"
     echo ""
 }
 
