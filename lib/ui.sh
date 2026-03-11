@@ -120,7 +120,6 @@ ui_msg() {
     
     echo "$title" | fzf --header="$message" \
         --prompt="按 Enter 继续 " \
-        --no-input \
         --height=10 \
         --exit-0
 }
@@ -150,7 +149,6 @@ ui_input() {
         --print-query \
         --height=10 \
         --exit-0 \
-        --no-input \
         --query="$default" \
         | head -1)
     
@@ -193,7 +191,6 @@ ui_textbox() {
     
     echo "$content" | fzf --header="$title" \
         --prompt="按 Enter 返回 " \
-        --no-input \
         --exit-0 \
         --height=80%
 }
@@ -204,7 +201,6 @@ ui_text() {
     
     echo "$content" | fzf --header="$title" \
         --prompt="按 Enter 返回 " \
-        --no-input \
         --exit-0 \
         --height=80%
 }
@@ -278,7 +274,6 @@ ui_table() {
     printf "%s\n" "${data[@]}" | \
         fzf --header="$title" \
             --prompt="按 Enter 返回 " \
-            --no-input \
             --exit-0 \
             --height=80%
 }

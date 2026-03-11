@@ -46,24 +46,56 @@ update_check() {
 }
 
 update_do() {
+    ui_info "正在检查更新..."
+    
+    cd "$PROJECT_ROOT"
+    
+    if [[ ! -d ".git" ]]; then
+        ui_msg "非 Git 安装，请手动更新" "提示"
+        return
+    fi
+    
+    git fetch origin 2>/dev/null
+    
+    local current_commit latest_commit
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    latest_commit=$(git rev-parse origin/main 2>/dev/null)
+    
+    if [[ "$current_commit" == "$latest_commit" ]]; then
+        ui_msg "当前已是最新版本" "提示"
+        return
+    fi
+    
+    echo ""
+    echo "========== 代码变更统计 =========="
+    git diff --stat HEAD origin/main 2>/dev/null
+    echo "=================================="
+    echo ""
+    
+    local diff_summary
+    diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
+    echo "变更概览: $diff_summary 行"
+    echo ""
+    
     if ! ui_confirm "确定要更新脚本吗？"; then
         return
     fi
     
     ui_info "正在更新脚本..."
     
-    cd "$PROJECT_ROOT"
-    
-    if [[ -d ".git" ]]; then
-        if git fetch origin && git reset --hard origin/main && git clean -f -d; then
-            ui_success "脚本更新成功！"
-            ui_msg "请重新运行脚本以使用新版本" "提示"
-            exit 0
-        else
-            ui_error "更新失败"
-        fi
+    if git reset --hard origin/main && git clean -f -d; then
+        ui_success "脚本更新成功！"
+        echo ""
+        echo "3秒后自动重启..."
+        sleep 1
+        echo "2秒后自动重启..."
+        sleep 1
+        echo "1秒后自动重启..."
+        sleep 1
+        echo "正在重启..."
+        exec "$PROJECT_ROOT/bin/cs"
     else
-        ui_msg "非 Git 安装，请手动更新" "提示"
+        ui_error "更新失败"
     fi
 }
 
