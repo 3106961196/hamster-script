@@ -1,47 +1,94 @@
 #!/bin/bash
 
 update_menu() {
-    local current_version latest_version
-    current_version="$PROJECT_VERSION"
+    cd "$PROJECT_ROOT"
+    
+    if [[ ! -d ".git" ]]; then
+        ui_msg "非 Git 安装，无法检查更新" "提示"
+        return
+    fi
     
     ui_info "正在检查更新..."
-    latest_version=$(update_check_latest 2>/dev/null)
+    git fetch origin 2>/dev/null
+    
+    local current_commit latest_commit
+    current_commit=$(git rev-parse --short HEAD 2>/dev/null)
+    latest_commit=$(git rev-parse --short origin/main 2>/dev/null)
     
     local status
-    if [[ -n "$latest_version" ]] && [[ "$latest_version" != "$current_version" ]]; then
-        status="⬆️ 有新版本: $latest_version"
+    if [[ "$current_commit" != "$latest_commit" ]]; then
+        status="⬆️ 有新版本: $latest_commit"
     else
         status="✅ 已是最新版本"
     fi
     
     local choice
-    choice=$(ui_submenu "🔄 脚本更新" "当前版本: $current_version\n$status" \
+    choice=$(ui_submenu "🔄 脚本更新" "当前版本: $PROJECT_VERSION ($current_commit)\n$status" \
         "1" "立即更新" \
         "2" "查看更新日志" \
-        "3" "检查更新")
+        "3" "查看远程变更")
     
     case "$choice" in
         1) update_do ;;
         2) update_changelog ;;
-        3) update_check ;;
+        3) update_show_changes ;;
     esac
 }
 
-update_check() {
-    ui_info "正在检查更新..."
+update_show_changes() {
+    cd "$PROJECT_ROOT"
     
-    local latest_version
-    latest_version=$(update_check_latest 2>/dev/null)
-    
-    if [[ -z "$latest_version" ]]; then
-        ui_msg "无法检查更新，请检查网络连接" "错误"
+    if [[ ! -d ".git" ]]; then
+        ui_msg "非 Git 安装" "提示"
         return
     fi
     
-    if [[ "$latest_version" == "$PROJECT_VERSION" ]]; then
-        ui_msg "当前已是最新版本: $PROJECT_VERSION" "提示"
+    git fetch origin 2>/dev/null
+    
+    local current_commit latest_commit
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    latest_commit=$(git rev-parse origin/main 2>/dev/null)
+    
+    if [[ "$current_commit" == "$latest_commit" ]]; then
+        ui_msg "当前已是最新版本" "提示"
+        return
+    fi
+    
+    echo ""
+    echo "========== 代码变更统计 =========="
+    git diff --stat HEAD origin/main 2>/dev/null
+    echo "=================================="
+    echo ""
+    
+    local diff_summary
+    diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
+    echo "变更概览: $diff_summary 行"
+    echo ""
+    
+    ui_msg "按 Enter 返回" "查看完成"
+}
+
+update_check() {
+    cd "$PROJECT_ROOT"
+    
+    if [[ ! -d ".git" ]]; then
+        ui_msg "非 Git 安装，无法检查更新" "提示"
+        return
+    fi
+    
+    ui_info "正在检查更新..."
+    git fetch origin 2>/dev/null
+    
+    local current_commit latest_commit
+    current_commit=$(git rev-parse HEAD 2>/dev/null)
+    latest_commit=$(git rev-parse origin/main 2>/dev/null)
+    
+    if [[ "$current_commit" == "$latest_commit" ]]; then
+        ui_msg "当前已是最新版本" "提示"
     else
-        ui_msg "发现新版本: $latest_version\n当前版本: $PROJECT_VERSION" "更新可用"
+        local behind
+        behind=$(git rev-list --count HEAD..origin/main 2>/dev/null)
+        ui_msg "发现新版本，落后 $behind 个提交\n当前: ${current_commit:0:7}\n最新: ${latest_commit:0:7}" "更新可用"
     fi
 }
 
@@ -111,10 +158,4 @@ update_changelog() {
     fi
     
     ui_text "$changelog" "📋 更新日志"
-}
-
-update_check_latest() {
-    local version
-    version=$(curl -sL "https://raw.githubusercontent.com/3106961196/hamster-script/main/lib/core.sh" 2>/dev/null | grep "PROJECT_VERSION=" | head -1 | cut -d'"' -f2)
-    echo "$version"
 }
