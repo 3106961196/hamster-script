@@ -1,5 +1,13 @@
 #!/bin/bash
 
+load_module "package"
+load_module "project"
+load_module "system"
+load_module "backup"
+load_module "monitor"
+load_module "update"
+load_module "settings"
+
 main_menu() {
     while true; do
         local choice
