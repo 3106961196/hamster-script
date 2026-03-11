@@ -26,28 +26,33 @@ ui_select() {
     local title="$1"
     local prompt="${2:-请选择:}"
     local select_one="${3:-false}"
-    shift 2
+    shift 3
     local items=("$@")
     
     local header="$title"
-    local tab=$'\t'
+    local tmp_file
+    tmp_file=$(mktemp)
+    
+    printf "%s\n" "${items[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
+    
     local fzf_opts=(
         --header="$header"
         --prompt="$prompt "
         --with-nth=2..
-        --delimiter="$tab"
+        --delimiter=$'\t'
         --exit-0
-        --bind='enter:become(echo {1})'
-        --bind='esc:become(echo "")'
     )
     
     if [[ "$select_one" == "true" ]]; then
         fzf_opts+=(--select-1)
     fi
     
-    printf "%s\n" "${items[@]}" | \
-        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
-        fzf "${fzf_opts[@]}" | head -1
+    local result
+    result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
+    
+    rm -f "$tmp_file"
+    echo "$result"
 }
 
 ui_menu() {
@@ -61,20 +66,23 @@ ui_submenu() {
     local items=("$@")
     
     local header="$title"
-    local tab=$'\t'
+    local tmp_file
+    tmp_file=$(mktemp)
     
-    {
-        printf "%s\n" "${items[@]}" | \
-            awk 'NR%2==1{key=$0; getline; print key "\t" $0}'
-        printf "b\t返回\n"
-    } | fzf --header="$header" \
+    printf "%s\n" "${items[@]}" | \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
+    printf "b\t返回\n" >> "$tmp_file"
+    
+    local result
+    result=$(fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter="$tab" \
+            --delimiter=$'\t' \
             --exit-0 \
-            --bind='enter:become(echo {1})' \
-            --bind='esc:become(echo b)' \
-        | head -1
+            < "$tmp_file" | cut -f1)
+    
+    rm -f "$tmp_file"
+    echo "$result"
 }
 
 ui_multi_select() {
@@ -84,19 +92,23 @@ ui_multi_select() {
     local items=("$@")
     
     local header="$title"
-    local tab=$'\t'
+    local tmp_file
+    tmp_file=$(mktemp)
     
     printf "%s\n" "${items[@]}" | \
-        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
-        fzf --header="$header" \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
+    
+    local result
+    result=$(fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter="$tab" \
+            --delimiter=$'\t' \
             --multi \
             --exit-0 \
-            --bind='enter:become(echo {1})' \
-            --bind='esc:become(echo "")' \
-        | head -1
+            < "$tmp_file" | cut -f1)
+    
+    rm -f "$tmp_file"
+    echo "$result"
 }
 
 ui_msg() {
@@ -146,18 +158,15 @@ ui_confirm() {
     local message="$1"
     local title="${2:-确认}"
     
-    local tab=$'\t'
     local result
     result=$(printf "y\t是\nn\t否\n" | \
         fzf --header="$title: $message" \
             --prompt="选择: " \
             --with-nth=2.. \
-            --delimiter="$tab" \
+            --delimiter=$'\t' \
             --height=10 \
             --exit-0 \
-            --bind='enter:become(echo {1})' \
-            --bind='esc:become(echo n)' \
-        | head -1)
+        | cut -f1)
     
     [[ "$result" == "y" ]]
 }
@@ -277,18 +286,22 @@ ui_search() {
     local items=("$@")
     
     local header="$title (输入关键词搜索)"
-    local tab=$'\t'
+    local tmp_file
+    tmp_file=$(mktemp)
     
     printf "%s\n" "${items[@]}" | \
-        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
-        fzf --header="$header" \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
+    
+    local result
+    result=$(fzf --header="$header" \
             --prompt="$prompt " \
             --with-nth=2.. \
-            --delimiter="$tab" \
+            --delimiter=$'\t' \
             --exit-0 \
-            --bind='enter:become(echo {1})' \
-            --bind='esc:become(echo "")' \
-        | head -1
+            < "$tmp_file" | cut -f1)
+    
+    rm -f "$tmp_file"
+    echo "$result"
 }
 
 ui_action() {
@@ -297,16 +310,20 @@ ui_action() {
     local actions=("$@")
     
     local header="$title"
-    local tab=$'\t'
+    local tmp_file
+    tmp_file=$(mktemp)
     
     printf "%s\n" "${actions[@]}" | \
-        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' | \
-        fzf --header="$header" \
+        awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
+    
+    local result
+    result=$(fzf --header="$header" \
             --prompt="操作: " \
             --with-nth=2.. \
-            --delimiter="$tab" \
+            --delimiter=$'\t' \
             --exit-0 \
-            --bind='enter:become(echo {1})' \
-            --bind='esc:become(echo "")' \
-        | head -1
+            < "$tmp_file" | cut -f1)
+    
+    rm -f "$tmp_file"
+    echo "$result"
 }
