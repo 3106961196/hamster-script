@@ -42,6 +42,7 @@ ui_select() {
         --with-nth=2..
         --delimiter=$'\t'
         --exit-0
+        --bind='right-click:become(echo "")'
     )
     
     if [[ "$select_one" == "true" ]]; then
@@ -79,6 +80,7 @@ ui_submenu() {
             --with-nth=2.. \
             --delimiter=$'\t' \
             --exit-0 \
+            --bind='right-click:become(echo b)' \
             < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
@@ -105,6 +107,7 @@ ui_multi_select() {
             --delimiter=$'\t' \
             --multi \
             --exit-0 \
+            --bind='right-click:become(echo "")' \
             < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
@@ -166,6 +169,7 @@ ui_confirm() {
             --delimiter=$'\t' \
             --height=10 \
             --exit-0 \
+            --bind='right-click:become(echo n)' \
         | cut -f1)
     
     [[ "$result" == "y" ]]
@@ -298,6 +302,7 @@ ui_search() {
             --with-nth=2.. \
             --delimiter=$'\t' \
             --exit-0 \
+            --bind='right-click:become(echo "")' \
             < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
@@ -322,6 +327,7 @@ ui_action() {
             --with-nth=2.. \
             --delimiter=$'\t' \
             --exit-0 \
+            --bind='right-click:become(echo "")' \
             < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"

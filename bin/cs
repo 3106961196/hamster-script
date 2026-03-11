@@ -12,11 +12,6 @@ source "$PROJECT_ROOT/lib/core.sh"
 
 init_core
 
-if ! command -v fzf &>/dev/null; then
-    echo "错误: fzf 未安装，请先运行安装脚本"
-    exit 1
-fi
-
 main() {
     if [[ $# -gt 0 ]]; then
         case "$1" in

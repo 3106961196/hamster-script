@@ -89,17 +89,17 @@ install_dependencies() {
     case "$PKG_MANAGER" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
-            apt update -qq
-            apt install -y -qq $packages fonts-wqy* || apt install -y $packages
+            apt update -qq || { echo "错误: apt update 失败"; exit 1; }
+            apt install -y -qq $packages fonts-wqy* || apt install -y $packages || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         yum)
-            yum install -y -q git wget curl tar xz jq sudo tmux
+            yum install -y -q git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         pacman)
-            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux
+            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         apk)
-            apk add --quiet git wget curl tar xz jq sudo tmux
+            apk add --quiet git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
     esac
 }
@@ -145,14 +145,14 @@ install_fzf() {
     if [[ "$download_ok" != "true" ]]; then
         echo "下载失败，尝试使用包管理器安装..."
         case "$PKG_MANAGER" in
-            apt) apt install -y fzf ;;
-            yum) yum install -y fzf ;;
-            pacman) pacman -S --noconfirm fzf ;;
-            apk) apk add fzf ;;
+            apt) apt install -y fzf || { echo "错误: fzf 安装失败"; exit 1; } ;;
+            yum) yum install -y fzf || { echo "错误: fzf 安装失败"; exit 1; } ;;
+            pacman) pacman -S --noconfirm fzf || { echo "错误: fzf 安装失败"; exit 1; } ;;
+            apk) apk add fzf || { echo "错误: fzf 安装失败"; exit 1; } ;;
         esac
     elif [[ -f "$tmp_dir/fzf.tar.gz" ]]; then
-        tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir"
-        mv "$tmp_dir/fzf" /usr/local/bin/fzf
+        tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir" || { echo "错误: fzf 解压失败"; exit 1; }
+        mv "$tmp_dir/fzf" /usr/local/bin/fzf || { echo "错误: fzf 移动失败"; exit 1; }
         chmod +x /usr/local/bin/fzf
         echo "fzf 安装成功"
     fi
@@ -160,9 +160,8 @@ install_fzf() {
     rm -rf "$tmp_dir"
     
     if ! command -v fzf &>/dev/null; then
-        echo "错误: fzf 安装失败，请手动安装"
-        echo "  apt install fzf  或  yum install fzf"
-        return 1
+        echo "错误: fzf 安装失败"
+        exit 1
     fi
     
     return 0
