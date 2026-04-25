@@ -84,13 +84,11 @@ install_dependencies() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "安装依赖包..."
     
-    local packages="git wget curl tar xz jq sudo tmux"
-    
     case "$PKG_MANAGER" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
             apt update -qq || { echo "错误: apt update 失败"; exit 1; }
-            apt install -y -qq $packages fonts-wqy* || apt install -y $packages || { echo "错误: 依赖包安装失败"; exit 1; }
+            apt install -y -qq git wget curl tar xz-utils jq sudo tmux fonts-wqy* || apt install -y git wget curl tar xz-utils jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         yum)
             yum install -y -q git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
