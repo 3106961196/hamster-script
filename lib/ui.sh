@@ -1,13 +1,20 @@
 #!/bin/bash
 
 UI_TITLE="🐹 Hamster Script"
+FZF_SUPPORTS_BECOME="false"
 
 ui_init() {
     if ! command -v fzf &>/dev/null; then
         echo "错误: fzf 未安装" >&2
         return 1
     fi
-    
+
+    if fzf --help 2>&1 | grep -q "become(.*COMMAND"; then
+        FZF_SUPPORTS_BECOME="true"
+    else
+        FZF_SUPPORTS_BECOME="false"
+    fi
+
     export FZF_DEFAULT_OPTS="
         --height=80%
         --layout=reverse
@@ -22,36 +29,49 @@ ui_init() {
     "
 }
 
+ui_bind_right_click() {
+    local command="$1"
+
+    if [[ "$FZF_SUPPORTS_BECOME" == "true" ]]; then
+        printf -- "--bind=right-click:become(%s)" "$command"
+    fi
+}
+
 ui_select() {
     local title="$1"
     local prompt="${2:-请选择:}"
     local select_one="${3:-false}"
     shift 3
     local items=("$@")
-    
+
     local header="$title"
     local tmp_file
     tmp_file=$(mktemp)
-    
+
     printf "%s\n" "${items[@]}" | \
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
-    
+
     local fzf_opts=(
         --header="$header"
         --prompt="$prompt "
         --with-nth=2..
         --delimiter=$'\t'
         --exit-0
-        --bind='right-click:become(echo "")'
     )
-    
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo ""')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
     if [[ "$select_one" == "true" ]]; then
         fzf_opts+=(--select-1)
     fi
-    
+
     local result
     result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
-    
+
     rm -f "$tmp_file"
     echo "$result"
 }
@@ -75,13 +95,21 @@ ui_submenu() {
     printf "b\t返回\n" >> "$tmp_file"
     
     local result
-    result=$(fzf --header="$header" \
-            --prompt="$prompt " \
-            --with-nth=2.. \
-            --delimiter=$'\t' \
-            --exit-0 \
-            --bind='right-click:become(echo b)' \
-            < "$tmp_file" | cut -f1)
+    local fzf_opts=(
+        --header="$header"
+        --prompt="$prompt "
+        --with-nth=2..
+        --delimiter=$'\t'
+        --exit-0
+    )
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo b')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
+    result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
     echo "$result"
@@ -101,14 +129,22 @@ ui_multi_select() {
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
     
     local result
-    result=$(fzf --header="$header" \
-            --prompt="$prompt " \
-            --with-nth=2.. \
-            --delimiter=$'\t' \
-            --multi \
-            --exit-0 \
-            --bind='right-click:become(echo "")' \
-            < "$tmp_file" | cut -f1)
+    local fzf_opts=(
+        --header="$header"
+        --prompt="$prompt "
+        --with-nth=2..
+        --delimiter=$'\t'
+        --multi
+        --exit-0
+    )
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo ""')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
+    result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
     echo "$result"
@@ -160,15 +196,22 @@ ui_confirm() {
     local title="${2:-确认}"
     
     local result
-    result=$(printf "y\t是\nn\t否\n" | \
-        fzf --header="$title: $message" \
-            --prompt="选择: " \
-            --with-nth=2.. \
-            --delimiter=$'\t' \
-            --height=10 \
-            --exit-0 \
-            --bind='right-click:become(echo n)' \
-        | cut -f1)
+    local fzf_opts=(
+        --header="$title: $message"
+        --prompt="选择: "
+        --with-nth=2..
+        --delimiter=$'\t'
+        --height=10
+        --exit-0
+    )
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo n')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
+    result=$(printf "y\t是\nn\t否\n" | fzf "${fzf_opts[@]}" | cut -f1)
     
     [[ "$result" == "y" ]]
 }
@@ -292,13 +335,21 @@ ui_search() {
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
     
     local result
-    result=$(fzf --header="$header" \
-            --prompt="$prompt " \
-            --with-nth=2.. \
-            --delimiter=$'\t' \
-            --exit-0 \
-            --bind='right-click:become(echo "")' \
-            < "$tmp_file" | cut -f1)
+    local fzf_opts=(
+        --header="$header"
+        --prompt="$prompt "
+        --with-nth=2..
+        --delimiter=$'\t'
+        --exit-0
+    )
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo ""')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
+    result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
     echo "$result"
@@ -317,13 +368,21 @@ ui_action() {
         awk 'NR%2==1{key=$0; getline; print key "\t" $0}' > "$tmp_file"
     
     local result
-    result=$(fzf --header="$header" \
-            --prompt="操作: " \
-            --with-nth=2.. \
-            --delimiter=$'\t' \
-            --exit-0 \
-            --bind='right-click:become(echo "")' \
-            < "$tmp_file" | cut -f1)
+    local fzf_opts=(
+        --header="$header"
+        --prompt="操作: "
+        --with-nth=2..
+        --delimiter=$'\t'
+        --exit-0
+    )
+
+    local right_click_bind
+    right_click_bind=$(ui_bind_right_click 'echo ""')
+    if [[ -n "$right_click_bind" ]]; then
+        fzf_opts+=("$right_click_bind")
+    fi
+
+    result=$(fzf "${fzf_opts[@]}" < "$tmp_file" | cut -f1)
     
     rm -f "$tmp_file"
     echo "$result"

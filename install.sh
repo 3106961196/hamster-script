@@ -83,38 +83,52 @@ check_os() {
 install_dependencies() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "安装依赖包..."
-    
+
     case "$PKG_MANAGER" in
         apt)
             export DEBIAN_FRONTEND=noninteractive
             apt update -qq || { echo "错误: apt update 失败"; exit 1; }
-            apt install -y -qq git wget curl tar xz-utils jq sudo tmux fonts-wqy* || apt install -y git wget curl tar xz-utils jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
+            apt install -y -qq git wget curl tar xz-utils jq sudo tmux fonts-wqy* grep || apt install -y git wget curl tar xz-utils jq sudo tmux grep || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         yum)
-            yum install -y -q git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
+            yum install -y -q git wget curl tar xz jq sudo tmux grep || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         pacman)
-            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
+            pacman -S --noconfirm --quiet git wget curl tar xz jq sudo tmux grep || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
         apk)
-            apk add --quiet git wget curl tar xz jq sudo tmux || { echo "错误: 依赖包安装失败"; exit 1; }
+            apk add --quiet git wget curl tar xz jq sudo tmux grep || { echo "错误: 依赖包安装失败"; exit 1; }
             ;;
     esac
+}
+
+fzf_supports_become() {
+    if ! command -v fzf &>/dev/null; then
+        return 1
+    fi
+
+    fzf --help 2>&1 | grep -q "become(.*COMMAND"
 }
 
 install_fzf() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "安装 fzf..."
-    
+
     if command -v fzf &>/dev/null; then
-        echo "fzf 已安装，跳过"
-        return 0
+        echo "检测到已安装 fzf: $(fzf --version | head -1)"
+        if fzf_supports_become; then
+            echo "fzf 支持 become(...)，跳过安装"
+            return 0
+        fi
+
+        echo "警告: 当前 fzf 不支持 become(...)，将安装兼容版本"
     fi
-    
+
     local fzf_version="0.45.0"
     local fzf_url
     local arch
-    
+    local installed_via_binary=false
+
     arch=$(uname -m)
     case "$arch" in
         x86_64)  arch="amd64" ;;
@@ -122,12 +136,12 @@ install_fzf() {
         armv7l)  arch="armv7" ;;
         *)       arch="amd64" ;;
     esac
-    
+
     fzf_url="https://github.com/junegunn/fzf/releases/download/v${fzf_version}/fzf-${fzf_version}-linux_${arch}.tar.gz"
-    
+
     local tmp_dir="/tmp/fzf-install"
     mkdir -p "$tmp_dir"
-    
+
     echo "下载 fzf..."
     local download_ok=false
     if command -v wget &>/dev/null; then
@@ -139,7 +153,7 @@ install_fzf() {
             download_ok=true
         fi
     fi
-    
+
     if [[ "$download_ok" != "true" ]]; then
         echo "下载失败，尝试使用包管理器安装..."
         case "$PKG_MANAGER" in
@@ -152,16 +166,31 @@ install_fzf() {
         tar -xzf "$tmp_dir/fzf.tar.gz" -C "$tmp_dir" || { echo "错误: fzf 解压失败"; exit 1; }
         mv "$tmp_dir/fzf" /usr/local/bin/fzf || { echo "错误: fzf 移动失败"; exit 1; }
         chmod +x /usr/local/bin/fzf
+        installed_via_binary=true
         echo "fzf 安装成功"
     fi
-    
+
     rm -rf "$tmp_dir"
-    
+
     if ! command -v fzf &>/dev/null; then
         echo "错误: fzf 安装失败"
         exit 1
     fi
-    
+
+    echo "当前 fzf 版本: $(fzf --version | head -1)"
+    if fzf_supports_become; then
+        echo "fzf 支持 become(...)"
+        return 0
+    fi
+
+    if [[ "$installed_via_binary" == "true" ]]; then
+        echo "错误: 已安装的 fzf 仍不支持 become(...)"
+        exit 1
+    fi
+
+    echo "警告: 包管理器安装的 fzf 不支持 become(...)"
+    echo "警告: cs 将自动禁用右键快捷操作，但仍可正常使用键盘菜单"
+
     return 0
 }
 
