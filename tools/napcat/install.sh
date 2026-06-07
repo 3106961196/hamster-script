@@ -1,254 +1,342 @@
 #!/bin/bash
+# NapCat 安装脚本
+# 基于 NapCat.sh 核心逻辑改写，适配 hamster-script 框架
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../.." && pwd)"
-CONFIG_DIR="$PROJECT_ROOT/config"
-NAPCAT_CONFIG_FILE="$CONFIG_DIR/napcat.yaml"
-INSTALL_DIR=$(find /root/cs -maxdepth 1 -type d -iname "napcat" 2>/dev/null | head -1)
+PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/.." && pwd)"
 
-COMMON_PORTS=(80 443 22 3306 5432 6379 8080 3000 5000 8000 9000 27017)
+TARGET_FOLDER="/opt/QQ/resources/app/app_launcher"
+INSTALL_DIR="$TARGET_FOLDER/napcat"
+NAPCAT_CLI="/usr/local/bin/napcat"
+NT_CLI="/usr/local/bin/nt"
 
-is_port_available() {
-    local port=$1
-    if command -v ss >/dev/null 2>&1; then
-        ss -tuln 2>/dev/null | grep -q ":$port " && return 1
-    elif command -v netstat >/dev/null 2>&1; then
-        netstat -tuln 2>/dev/null | grep -q ":$port " && return 1
-    fi
-    return 0
+# ─── 颜色 ───────────────────────────────────────────────────
+RED='\033[0;31m'
+GREEN='\033[0;32m'
+YELLOW='\033[1;33m'
+CYAN='\033[0;36m'
+NC='\033[0m'
+
+log() {
+    local msg="[$(date +'%Y-%m-%d %H:%M:%S')]: $1"
+    case "$1" in
+        *"失败"*|*"错误"*|*"无法连接"*|*"不存在"*) echo -e "${RED}${msg}${NC}" ;;
+        *"成功"*) echo -e "${GREEN}${msg}${NC}" ;;
+        *"忽略"*|*"跳过"*) echo -e "${YELLOW}${msg}${NC}" ;;
+        *) echo -e "${CYAN}${msg}${NC}" ;;
+    esac
 }
 
-is_common_port() {
-    local port=$1
-    for common_port in "${COMMON_PORTS[@]}"; do
-        if [ "$port" -eq "$common_port" ]; then
-            return 0
-        fi
-    done
-    return 1
+run_cmd() {
+    log "$2中..."
+    if ! eval "$1"; then
+        log "$2失败"
+        exit 1
+    fi
+    log "$2成功"
 }
 
-get_port() {
-    local default_port=$1
-    local port=""
-    while true; do
-        port=$(dialog --title "端口配置" --ok-label "确定" --cancel-label "返回" --inputbox "请输入 NapCat API 服务端口 (1-65535):" 10 60 "$default_port" 2>&1 >/dev/tty)
-        
-        if [ $? -ne 0 ]; then
-            return 1
-        fi
-        
-        if [ -z "$port" ]; then
-            dialog --title "错误" --msgbox "端口号不能为空" 10 50
-            continue
-        fi
-        
-        if ! [[ "$port" =~ ^[0-9]+$ ]] || [ "$port" -lt 1 ] || [ "$port" -gt 65535 ]; then
-            dialog --title "错误" --msgbox "端口号必须是 1-65535 之间的数字" 10 50
-            continue
-        fi
-        
-        if ! is_port_available "$port"; then
-            if is_common_port "$port"; then
-                dialog --title "端口冲突" --yesno "端口 $port 是常用端口，可能已被占用。建议更换其他端口。\n\n是否使用此端口？" 12 60
-                if [ $? -ne 0 ]; then
-                    continue
-                fi
-            else
-                dialog --title "端口冲突" --msgbox "端口 $port 已被占用，请使用其他端口" 10 50
-                continue
-            fi
-        fi
-        
-        echo "$port"
-        return 0
-    done
+# ─── 架构检测 ───────────────────────────────────────────────
+
+get_system_arch() {
+    system_arch=$(uname -m | sed 's/aarch64/arm64/;s/x86_64/amd64/')
+    [ -z "$system_arch" ] && { log "无法识别的系统架构"; exit 1; }
+    log "当前系统架构: ${system_arch}"
 }
 
-get_qq_number() {
-    local qq=""
-    while true; do
-        qq=$(dialog --title "QQ 配置" --ok-label "确定" --cancel-label "返回" --inputbox "请输入要登录的 QQ 号:" 10 50 "" 2>&1 >/dev/tty)
-        
-        if [ $? -ne 0 ]; then
-            return 1
-        fi
-        
-        if [ -z "$qq" ]; then
-            dialog --title "错误" --msgbox "QQ 号不能为空" 10 50
-            continue
-        fi
-        
-        if ! [[ "$qq" =~ ^[0-9]+$ ]]; then
-            dialog --title "错误" --msgbox "QQ 号必须是数字" 10 50
-            continue
-        fi
-        
-        if [ "$qq" -lt 10000 ]; then
-            dialog --title "错误" --msgbox "QQ 号格式不正确" 10 50
-            continue
-        fi
-        
-        echo "$qq"
-        return 0
-    done
-}
+# ─── 包管理器检测 ───────────────────────────────────────────
 
-check_dependencies() {
-    echo "正在检查依赖..."
-    if ! command -v git >/dev/null 2>&1; then
-        echo "错误: git 未安装"
-        dialog --title "错误" --msgbox "git 未安装，请先安装 git" 10 50
-        return 1
-    fi
-    
-    if ! command -v node >/dev/null 2>&1; then
-        echo "错误: Node.js 未安装"
-        dialog --title "错误" --msgbox "Node.js 未安装，请先安装 Node.js" 10 50
-        return 1
-    fi
-    
-    if ! command -v pnpm >/dev/null 2>&1; then
-        echo "错误: pnpm 未安装"
-        dialog --title "错误" --msgbox "pnpm 未安装，请先安装 pnpm (npm install -g pnpm)" 10 50
-        return 1
-    fi
-    
-    local node_version=$(node -v 2>/dev/null | sed 's/v//')
-    local major_version=$(echo "$node_version" | cut -d. -f1)
-    if [ "$major_version" -lt 18 ]; then
-        echo "警告: Node.js 版本可能过低，建议使用 v18 或更高版本"
-    fi
-    
-    return 0
-}
-
-napcat_install() {
-    local auto_mode=false
-    if [ "$NAPCAT_INSTALL" == "true" ]; then
-        auto_mode=true
-    fi
-    
-    if ! $auto_mode && [ -d "$INSTALL_DIR" ]; then
-        dialog --title "NapCat 已安装" --yesno "NapCat 已安装在 $INSTALL_DIR，是否重新安装？" 10 60
-        if [ $? -ne 0 ]; then
-            return 0
-        fi
-    fi
-    
-    clear
-    echo "========================================"
-    echo "          NapCat 安装程序"
-    echo "========================================"
-    echo ""
-    
-    if ! check_dependencies; then
-        return 1
-    fi
-    
-    echo "获取配置信息..."
-    local qq_number=$(get_qq_number)
-    if [ $? -ne 0 ] || [ -z "$qq_number" ]; then
-        return 1
-    fi
-    
-    local port=$(get_port 5800)
-    if [ $? -ne 0 ] || [ -z "$port" ]; then
-        return 1
-    fi
-    
-    dialog --title "确认安装" --yes-label "确定" --no-label "取消" --yesno "确认开始安装 NapCat？\n\nQQ 号: $qq_number\n端口: $port\n安装目录: $INSTALL_DIR" 12 60
-    if [ $? -ne 0 ]; then
-        return 0
-    fi
-    
-    echo ""
-    echo "========================================"
-    echo "          开始安装"
-    echo "========================================"
-    echo ""
-    
-    if $auto_mode; then
-        echo "项目管理模式：源码已下载，跳过克隆步骤"
+set_package_tool() {
+    if command -v apt-get &>/dev/null; then
+        package_manager="apt-get"; package_installer="dpkg"
+    elif command -v dnf &>/dev/null; then
+        package_manager="dnf"; package_installer="rpm"
+    elif command -v yum &>/dev/null; then
+        package_manager="yum"; package_installer="rpm"
     else
-        if [ -d "$INSTALL_DIR" ]; then
-            echo "备份现有配置..."
-            if [ -f "$NAPCAT_CONFIG_FILE" ]; then
-                cp "$NAPCAT_CONFIG_FILE" "$NAPCAT_CONFIG_FILE.backup.$(date +%Y%m%d%H%M%S)"
-            fi
-            rm -rf "$INSTALL_DIR"
-        fi
-        
-        mkdir -p "$INSTALL_DIR"
-        
-        echo "克隆 NapCat 源码..."
-        if ! git clone --depth 1 https://gh-proxy.org/https://github.com/NapNeko/NapCatQQ.git "$INSTALL_DIR" 2>&1; then
-            echo "错误: 克隆源码失败"
-            dialog --title "错误" --msgbox "克隆源码失败，请检查网络连接" 10 50
-            rm -rf "$INSTALL_DIR"
-            return 1
-        fi
+        log "未找到 apt-get/dnf/yum"
+        exit 1
     fi
-    
-    if [ ! -d "$INSTALL_DIR" ]; then
-        mkdir -p "$INSTALL_DIR"
+    log "当前包管理器: ${package_manager}"
+}
+
+# ─── 安装依赖 ───────────────────────────────────────────────
+
+install_dependency() {
+    log "开始更新依赖..."
+    set_package_tool
+
+    if [ "$package_manager" = "apt-get" ]; then
+        apt-get update -y -qq 2>/dev/null || true
+        for p in zip unzip jq curl xvfb screen xauth procps; do
+            log "安装 $p..."
+            apt-get install -y -qq "$p" 2>/dev/null || true
+        done
+    elif [ "$package_manager" = "dnf" ] || [ "$package_manager" = "yum" ]; then
+        [ "$package_manager" = "dnf" ] && dnf install -y epel-release 2>/dev/null || true
+        for p in zip unzip jq curl xorg-x11-server-Xvfb screen procps-ng; do
+            log "安装 $p..."
+            $package_manager install -y "$p" 2>/dev/null || true
+        done
     fi
-    
-    echo "安装依赖..."
-    cd "$INSTALL_DIR"
-    if ! pnpm install 2>&1; then
-        echo "错误: 安装依赖失败"
-        dialog --title "错误" --msgbox "安装依赖失败" 10 50
-        return 1
+    log "更新依赖成功"
+}
+
+# ─── 下载 NapCat ────────────────────────────────────────────
+
+download_napcat() {
+    if [ -d "./NapCat" ] && [ "$(ls -A ./NapCat 2>/dev/null)" ]; then
+        log "文件夹已存在且不为空(./NapCat)，请重命名后重新执行脚本以防误删"
+        exit 1
     fi
-    
-    echo "生成配置文件..."
-    mkdir -p "$(dirname "$NAPCAT_CONFIG_FILE")"
-    
-    cat > "$NAPCAT_CONFIG_FILE" << EOF
-napcat:
-  name: "NapCat"
-  install_dir: "$INSTALL_DIR"
-  qq_number: "$qq_number"
-  port: $port
-  status: "installed"
-  installed_at: "$(date +"%Y-%m-%d %H:%M:%S")"
-EOF
-    
-    echo "创建启动脚本..."
-    cat > "$INSTALL_DIR/napcat.sh" << 'START_SCRIPT'
-#!/bin/bash
-cd "$(dirname "$0")"
-while true; do
-    echo "启动 NapCat $(date)"
-    node .
-    echo "NapCat 已退出，5 秒后自动重启..."
-    sleep 5
-done
-START_SCRIPT
-    chmod +x "$INSTALL_DIR/napcat.sh"
-    
-    echo ""
-    echo "========================================"
-    echo "          安装完成"
-    echo "========================================"
-    echo ""
-    
-    dialog --title "安装完成" --yes-label "启动服务" --no-label "返回" --yesno "NapCat 安装完成！\n\n现在启动服务并扫码登录？" 10 50
-    if [ $? -eq 0 ]; then
-        cd "$INSTALL_DIR"
-        nohup ./napcat.sh > /dev/null 2>&1 &
-        sleep 3
+    mkdir -p ./NapCat
+
+    default_file="NapCat.Shell.zip"
+    if [ -f "${default_file}" ]; then
+        log "检测到已下载NapCat安装包,跳过下载..."
+    else
+        log "开始下载NapCat安装包,请稍等..."
+        napcat_download_url="https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip"
         
-        if pgrep -f "napcat.sh" > /dev/null; then
-            dialog --title "服务已启动" --msgbox "NapCat 服务已启动！\n\n请查看终端中的二维码进行扫码登录。" 10 50
-            bash "$SCRIPT_DIR/manage.sh"
+        if command -v wget &>/dev/null; then
+            wget -q "$napcat_download_url" -O "$default_file" || {
+                # 带代理重试
+                wget -q "https://gh-proxy.com/${napcat_download_url}" -O "$default_file" || {
+                    log "文件下载失败"; exit 1
+                }
+            }
+        elif command -v curl &>/dev/null; then
+            curl -sL "$napcat_download_url" -o "$default_file" || {
+                curl -sL "https://gh-proxy.com/${napcat_download_url}" -o "$default_file" || {
+                    log "文件下载失败"; exit 1
+                }
+            }
         else
-            dialog --title "启动失败" --msgbox "NapCat 启动失败，请查看日志排查问题" 10 50
+            log "需要 wget 或 curl"
+            exit 1
         fi
+        log "${default_file} 成功下载"
+    fi
+
+    log "正在验证 ${default_file}..."
+    unzip -t "${default_file}" > /dev/null 2>&1
+    if [ $? -ne 0 ]; then
+        log "文件验证失败"
+        rm -rf ./NapCat ./NapCat.Shell.zip
+        exit 1
+    fi
+
+    log "正在解压 ${default_file}..."
+    unzip -q -o -d ./NapCat NapCat.Shell.zip || {
+        log "文件解压失败"
+        rm -rf ./NapCat ./NapCat.Shell.zip
+        exit 1
+    }
+}
+
+# ─── QQ 版本检测与安装 ──────────────────────────────────────
+
+check_linuxqq() {
+    local qqnt_json="./NapCat/qqnt.json"
+    if [ ! -f "$qqnt_json" ]; then
+        log "找不到 qqnt.json"
+        exit 1
+    fi
+
+    linuxqq_target_version=$(jq -r '.linuxVersion' "$qqnt_json")
+    linuxqq_target_verhash=$(jq -r '.linuxVerHash' "$qqnt_json")
+
+    if [[ -z "$linuxqq_target_version" || "$linuxqq_target_version" == "null" ]] || \
+       [[ -z "$linuxqq_target_verhash" || "$linuxqq_target_verhash" == "null" ]]; then
+        log "无法获取目标QQ版本"
+        exit 1
+    fi
+
+    linuxqq_target_build=${linuxqq_target_version##*-}
+    log "所需LinuxQQ版本: ${linuxqq_target_version}, 构建: ${linuxqq_target_build}"
+
+    # 检查是否已安装
+    local need_install=false
+    if [ "$package_installer" = "dpkg" ]; then
+        if dpkg -l | grep linuxqq &>/dev/null; then
+            local installed_version
+            installed_version=$(dpkg -l | grep "^ii" | grep "linuxqq" | awk '{print $3}')
+            log "LinuxQQ 已安装: $installed_version"
+            # 简化版版本比较：直接强制安装所需版本
+            if [ "$installed_version" != "$linuxqq_target_version" ]; then
+                need_install=true
+            fi
+        else
+            need_install=true
+        fi
+    elif [ "$package_installer" = "rpm" ]; then
+        if rpm -q linuxqq &>/dev/null; then
+            local installed_version
+            installed_version=$(rpm -q --queryformat '%{VERSION}' linuxqq)
+            log "LinuxQQ 已安装: $installed_version"
+            if [ "$installed_version" != "$linuxqq_target_version" ]; then
+                need_install=true
+            fi
+        else
+            need_install=true
+        fi
+    fi
+
+    if [ "$need_install" = true ]; then
+        install_linuxqq
+    else
+        log "LinuxQQ 版本已满足要求"
     fi
 }
 
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
-    napcat_install
-fi
+install_linuxqq() {
+    log "卸载旧版本LinuxQQ..."
+    if [ "$package_installer" = "dpkg" ]; then
+        apt-get remove -y -qq linuxqq 2>/dev/null || true
+    elif [ "$package_installer" = "rpm" ]; then
+        rpm -e linuxqq 2>/dev/null || true
+    fi
+
+    get_system_arch
+    base_url="https://dldir1.qq.com/qqfile/qq/QQNT/${linuxqq_target_verhash}/linuxqq_${linuxqq_target_version}"
+
+    log "下载LinuxQQ..."
+    if [ "$system_arch" = "amd64" ]; then
+        if [ "$package_installer" = "rpm" ]; then
+            qq_url="${base_url}_x86_64.rpm"
+            qq_file="QQ.rpm"
+        else
+            qq_url="${base_url}_amd64.deb"
+            qq_file="QQ.deb"
+        fi
+    elif [ "$system_arch" = "arm64" ]; then
+        if [ "$package_installer" = "rpm" ]; then
+            qq_url="${base_url}_aarch64.rpm"
+            qq_file="QQ.rpm"
+        else
+            qq_url="${base_url}_arm64.deb"
+            qq_file="QQ.deb"
+        fi
+    fi
+
+    if [ -z "$qq_url" ]; then
+        log "获取QQ下载链接失败"
+        exit 1
+    fi
+    log "QQ下载链接: ${qq_url}"
+
+    if command -v wget &>/dev/null; then
+        wget -q "$qq_url" -O "$qq_file" || { log "QQ下载失败"; exit 1; }
+    elif command -v curl &>/dev/null; then
+        curl -sL "$qq_url" -o "$qq_file" || { log "QQ下载失败"; exit 1; }
+    fi
+
+    if [ "$package_installer" = "dpkg" ]; then
+        run_cmd "apt-get install -f -y -qq ./$qq_file" "安装QQ"
+        run_cmd "apt-get install -y -qq libnss3 libgbm1" "安装依赖库"
+        log "安装libasound2中..."
+        apt-get install -y -qq libasound2 2>/dev/null || \
+        apt-get install -y -qq libasound2t64 2>/dev/null || \
+        { log "安装libasound2 失败"; exit 1; }
+    elif [ "$package_installer" = "rpm" ]; then
+        run_cmd "$package_manager localinstall -y ./$qq_file" "安装QQ"
+    fi
+    rm -f "$qq_file"
+}
+
+# ─── 安装 NapCat ────────────────────────────────────────────
+
+install_napcat() {
+    log "检查目标文件夹..."
+    for dir in /opt/QQ /opt/QQ/resources /opt/QQ/resources/app; do
+        [ ! -d "$dir" ] && { log "QQ安装不完整，缺少 $dir"; exit 1; }
+    done
+
+    mkdir -p "$TARGET_FOLDER/napcat"
+
+    log "正在复制NapCat文件..."
+    cp -r -f ./NapCat/* "$TARGET_FOLDER/napcat/" || {
+        log "文件复制失败"; exit 1
+    }
+    chmod -R 777 "$TARGET_FOLDER/napcat/"
+
+    log "正在注入NapCat加载脚本..."
+    echo "(async () => {await import('file:///${TARGET_FOLDER}/napcat/napcat.mjs');})();" > /opt/QQ/resources/app/loadNapCat.js
+
+    log "正在修改QQ启动配置..."
+    if [ -f "/opt/QQ/resources/app/package.json" ]; then
+        jq '.main = "./loadNapCat.js"' /opt/QQ/resources/app/package.json > /opt/QQ/resources/app/package.json.tmp
+        mv /opt/QQ/resources/app/package.json.tmp /opt/QQ/resources/app/package.json
+    fi
+
+    log "NapCat 安装成功"
+}
+
+# ─── 安装 CLI ───────────────────────────────────────────────
+
+install_cli() {
+    log "安装 napcat CLI..."
+    local cli_url="https://raw.githubusercontent.com/NapNeko/NapCat-Installer/refs/heads/main/script/napcat"
+    
+    if command -v wget &>/dev/null; then
+        wget -q "$cli_url" -O /tmp/napcatcli || true
+    elif command -v curl &>/dev/null; then
+        curl -sL "$cli_url" -o /tmp/napcatcli || true
+    fi
+    
+    if [ -f /tmp/napcatcli ] && [ -s /tmp/napcatcli ]; then
+        cp /tmp/napcatcli "$NAPCAT_CLI" 2>/dev/null && chmod +x "$NAPCAT_CLI" 2>/dev/null
+        rm -f /tmp/napcatcli
+        log "napcat CLI 安装成功"
+    else
+        log "napcat CLI 下载失败，跳过"
+    fi
+}
+
+# ─── 安装 nt 启动器 ─────────────────────────────────────────
+
+install_nt() {
+    local nt_source="${PROJECT_ROOT}/.log/nt"
+    if [ -f "$nt_source" ]; then
+        cp "$nt_source" "$NT_CLI" && chmod +x "$NT_CLI"
+        log "nt 启动器安装成功"
+    else
+        log "nt 源文件不存在: $nt_source"
+    fi
+}
+
+# ─── 清理 ───────────────────────────────────────────────────
+
+clean() {
+    rm -rf ./NapCat ./NapCat.Shell.zip
+}
+
+# ─── 主流程 ─────────────────────────────────────────────────
+
+main() {
+    clear
+    echo ""
+    echo "    (\\_/)"
+    echo "    ( •_•)"
+    echo "    / >🐹< \\"
+    echo ""
+    echo "      NapCat 安装脚本"
+    echo ""
+
+    install_dependency
+    download_napcat
+    check_linuxqq
+    install_napcat
+    install_cli
+    install_nt
+    clean
+
+    echo ""
+    log "================== NapCat 安装完成 =================="
+    log "NapCat 目录: $TARGET_FOLDER/napcat"
+    log "WEBUI_TOKEN 请查看: $TARGET_FOLDER/napcat/config/webui.json"
+    log "使用 nt 命令管理多QQ账号"
+    echo ""
+}
+
+main "$@"
