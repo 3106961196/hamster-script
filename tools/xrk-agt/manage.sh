@@ -67,18 +67,34 @@ start_service() {
     fi
 
     cd "$INSTALL_DIR"
+
+    # 检查依赖是否已装
+    if [[ ! -d "node_modules" ]]; then
+        ui_info "正在安装依赖..."
+        if [[ -f "pnpm-lock.yaml" ]]; then
+            pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        elif [[ -f "yarn.lock" ]]; then
+            yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        else
+            npm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        fi
+    fi
+
     ui_info "正在启动 XRK-AGT..."
 
     nohup node app.js > /dev/null 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
 
-    sleep 1
+    sleep 2
     if kill -0 "$pid" 2>/dev/null; then
         ui_success "XRK-AGT 已启动 (PID: $pid)"
     else
         rm -f "$PID_FILE"
-        ui_error "XRK-AGT 启动失败，请检查错误日志"
+        # 捕获启动错误
+        local err
+        err=$(cd "$INSTALL_DIR" && node app.js 2>&1 | head -5) || true
+        ui_error "XRK-AGT 启动失败：$err"
         return 1
     fi
 }
@@ -115,36 +131,43 @@ stop_service() {
 # ─── 重启 ─────────────────────────────────────────────────────
 
 restart_service() {
-    local was_running=false
-    if is_running; then
-        was_running=true
-    fi
-
     # 停止
     if [[ -f "$PID_FILE" ]]; then
         local pid
         pid=$(cat "$PID_FILE")
-        kill "$pid" 2>/dev/null
-        sleep 1
-        kill -9 "$pid" 2>/dev/null || true
+        kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null || true
         rm -f "$PID_FILE"
     fi
     pkill -f "node app.js" 2>/dev/null || true
     sleep 1
 
-    # 启动
     cd "$INSTALL_DIR"
+
+    # 检查依赖
+    if [[ ! -d "node_modules" ]]; then
+        ui_info "正在安装依赖..."
+        if [[ -f "pnpm-lock.yaml" ]]; then
+            pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        elif [[ -f "yarn.lock" ]]; then
+            yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        else
+            npm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+        fi
+    fi
+
     ui_info "正在重启 XRK-AGT..."
     nohup node app.js > /dev/null 2>&1 &
     local pid=$!
     echo "$pid" > "$PID_FILE"
 
-    sleep 1
+    sleep 2
     if kill -0 "$pid" 2>/dev/null; then
         ui_success "XRK-AGT 已重启 (PID: $pid)"
     else
         rm -f "$PID_FILE"
-        ui_error "XRK-AGT 重启失败"
+        local err
+        err=$(cd "$INSTALL_DIR" && node app.js 2>&1 | head -5) || true
+        ui_error "XRK-AGT 重启失败：$err"
         return 1
     fi
 }
@@ -163,16 +186,14 @@ reinstall_project() {
 
     # 停止服务
     if is_running; then
-        if command -v pm2 &>/dev/null && pm2 describe xrk-agt &>/dev/null; then
-            pm2 stop xrk-agt > /dev/null 2>&1
-            pm2 delete xrk-agt > /dev/null 2>&1
-        fi
         if [[ -f "$PID_FILE" ]]; then
             local pid
             pid=$(cat "$PID_FILE")
             kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null || true
             rm -f "$PID_FILE"
         fi
+        pkill -f "node app.js" 2>/dev/null || true
+        sleep 1
     fi
 
     ui_info "正在拉取最新代码..."
