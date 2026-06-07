@@ -132,6 +132,10 @@ update_do() {
     
     if git reset --hard origin/main && git clean -f -d; then
         ui_success "脚本更新成功！"
+
+        # git reset 会重置文件权限，需要恢复可执行位
+        find "$PROJECT_ROOT" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null
+
         echo ""
         echo "3秒后自动重启..."
         sleep 1

@@ -25,65 +25,13 @@ project_install_script() {
     echo "${PROJECT_ROOT}/tools/${name}/install.sh"
 }
 
-# ─── 加载 config/projects.yaml ──────────────────────────────
-# 读取通用项目配置（url / target / pre / post）
+# ─── 硬编码的 YAML 项目（无独立 tools/<name>/ 管理脚本） ──
 
-declare -a YAML_PROJECTS=()
-declare -A YAML_URL=()
-declare -A YAML_TARGET=()
-
-project_load_yaml() {
-    local yaml_file="${PROJECT_ROOT}/config/projects.yaml"
-    [[ ! -f "$yaml_file" ]] && return
-
-    YAML_PROJECTS=()
-
-    local in_projects=false
-    local current_name=""
-    local current_url=""
-    local current_target="/root/cs"
-
-    while IFS= read -r line || [[ -n "$line" ]]; do
-        # 去掉行首空白
-        local trimmed
-        trimmed=$(echo "$line" | sed 's/^[[:space:]]*//')
-
-        if [[ "$trimmed" == "projects:" ]]; then
-            in_projects=true
-            continue
-        fi
-
-        if ! $in_projects; then
-            continue
-        fi
-
-        if [[ "$trimmed" =~ ^-\ *name:\ (.*)$ ]]; then
-            # 保存上一个项目
-            if [[ -n "$current_name" ]]; then
-                YAML_PROJECTS+=("$current_name")
-                YAML_URL["$current_name"]="$current_url"
-                YAML_TARGET["$current_name"]="$current_target"
-            fi
-            current_name="${BASH_REMATCH[1]}"
-            current_url=""
-            current_target="/root/cs"
-        elif [[ -n "$current_name" ]] && [[ "$trimmed" =~ ^url:\ (.*)$ ]]; then
-            current_url="${BASH_REMATCH[1]}"
-        elif [[ -n "$current_name" ]] && [[ "$trimmed" =~ ^target:\ (.*)$ ]]; then
-            current_target="${BASH_REMATCH[1]}"
-        fi
-    done < "$yaml_file"
-
-    # 保存最后一个项目
-    if [[ -n "$current_name" ]]; then
-        YAML_PROJECTS+=("$current_name")
-        YAML_URL["$current_name"]="$current_url"
-        YAML_TARGET["$current_name"]="$current_target"
-    fi
-}
+YAML_PROJECTS=("TRSS-Yunzai")
+declare -A YAML_URL=([TRSS-Yunzai]="https://gitee.com/TimeRainStarSky/Yunzai.git")
+declare -A YAML_TARGET=([TRSS-Yunzai]="/root/cs")
 
 # ─── 构建完整项目列表（工具项目 + YAML 项目，去重） ──────
-# 结果写入两个全局数组：ALL_PROJECTS[] 和 ALL_SOURCES[] (值为 "tool" | "yaml")
 
 declare -a ALL_PROJECTS=()
 declare -A ALL_SOURCES=()
@@ -98,12 +46,15 @@ project_build_full_list() {
         ALL_SOURCES["$key"]="tool"
     done
 
-    # 2. YAML 项目（去重 — 同名时工具项目优先）
-    project_load_yaml
+    # 2. YAML 项目（去重 — 大小写不敏感，同名时工具项目优先）
     for yaml_name in "${YAML_PROJECTS[@]}"; do
         local duplicate=false
+        local yn_lower
+        yn_lower=$(echo "$yaml_name" | tr '[:upper:]' '[:lower:]')
         for existing in "${ALL_PROJECTS[@]}"; do
-            if [[ "$existing" == "$yaml_name" ]]; then
+            local ex_lower
+            ex_lower=$(echo "$existing" | tr '[:upper:]' '[:lower:]')
+            if [[ "$ex_lower" == "$yn_lower" ]]; then
                 duplicate=true
                 break
             fi
