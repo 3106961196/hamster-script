@@ -57,7 +57,7 @@ project_menu() {
         done
 
         local selected
-        selected=$(ui_select "📁 项目列表" "选择项目:" "${items[@]}")
+        selected=$(ui_menu "📁 项目列表" "选择项目:" "${items[@]}")
         [[ -z "$selected" ]] && break
 
         if project_is_installed "$selected"; then
