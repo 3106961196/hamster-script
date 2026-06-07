@@ -63,4 +63,12 @@ echo ""
 echo "✅ XRK-AGT 安装成功！"
 echo "安装目录: $INSTALL_DIR"
 echo ""
+
+read -p "是否现在启动 XRK-AGT？(y/N): " start_now
+if [[ "$start_now" =~ ^[Yy] ]]; then
+    cd "$INSTALL_DIR"
+    nohup node app.js > /dev/null 2>&1 &
+    sleep 2
+    echo "XRK-AGT 已启动"
+fi
 echo "使用 cs 项目管理菜单启动 XRK-AGT"

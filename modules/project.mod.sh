@@ -45,9 +45,9 @@ project_menu() {
                 local run_status
                 run_status=$(bash "$(project_manage_script "$key")" --auto status 2>/dev/null)
                 if [[ "$run_status" == "运行中" ]]; then
-                    status_text="🟢 运行中"
+                    status_text="✅ 已安装 🟢 运行中"
                 else
-                    status_text="🔴 已停止"
+                    status_text="✅ 已安装 🔴 已停止"
                 fi
             else
                 status_text="⚪ 未安装"
