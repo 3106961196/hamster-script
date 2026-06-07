@@ -5,14 +5,11 @@
 # 加载项目 UI 库
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../.." && pwd)"
-source "$PROJECT_ROOT/lib/core.sh" 2>/dev/null || true
-# 确保 ui 函数可用
-if ! type ui_init &>/dev/null; then
-    source "$PROJECT_ROOT/lib/ui.sh" 2>/dev/null || true
-fi
-if ! type log_info &>/dev/null; then
-    source "$PROJECT_ROOT/lib/log.sh" 2>/dev/null || true
-fi
+
+# 加载项目 UI 库
+source "$PROJECT_ROOT/lib/core.sh"
+load_lib "ui" 2>/dev/null || source "$PROJECT_ROOT/lib/ui.sh" 2>/dev/null
+load_lib "log" 2>/dev/null || source "$PROJECT_ROOT/lib/log.sh" 2>/dev/null
 
 REPO_URL="https://github.com/sunflowermm/XRK-AGT"
 INSTALL_DIR="/root/cs/XRK-AGT"

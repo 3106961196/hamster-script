@@ -6,9 +6,9 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/.." && pwd)"
 
 # 加载项目 UI 库
-source "$PROJECT_ROOT/lib/core.sh" 2>/dev/null || true
-if ! type ui_init &>/dev/null; then source "$PROJECT_ROOT/lib/ui.sh" 2>/dev/null || true; fi
-if ! type log_info &>/dev/null; then source "$PROJECT_ROOT/lib/log.sh" 2>/dev/null || true; fi
+source "$PROJECT_ROOT/lib/core.sh"
+load_lib "ui" 2>/dev/null || source "$PROJECT_ROOT/lib/ui.sh" 2>/dev/null
+load_lib "log" 2>/dev/null || source "$PROJECT_ROOT/lib/log.sh" 2>/dev/null
 
 BASE_DIR="${XRK_ROOT:-/xrk}/body"
 CONFIG_DIR="/opt/QQ/resources/app/app_launcher/napcat/config"
