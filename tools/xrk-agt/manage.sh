@@ -56,9 +56,22 @@ start_service() {
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
+
     cd "$INSTALL_DIR"
     ui_info "正在启动 XRK-AGT..."
-    node app.js
+
+    nohup node app.js > /dev/null 2>&1 &
+    local pid=$!
+    echo "$pid" > "$PID_FILE"
+
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        ui_success "XRK-AGT 已启动 (PID: $pid)"
+    else
+        rm -f "$PID_FILE"
+        ui_error "XRK-AGT 启动失败，请检查错误日志"
+        return 1
+    fi
 }
 
 # ─── 停止 ─────────────────────────────────────────────────────
@@ -73,22 +86,58 @@ stop_service() {
         return 0
     fi
 
-    if command -v pm2 &>/dev/null && pm2 describe xrk-agt &>/dev/null; then
-        pm2 stop xrk-agt > /dev/null 2>&1
-        pm2 delete xrk-agt > /dev/null 2>&1
-    fi
-
     if [[ -f "$PID_FILE" ]]; then
         local pid
         pid=$(cat "$PID_FILE")
         kill "$pid" 2>/dev/null
+        sleep 1
+        # 如果没杀掉，强杀
+        kill -9 "$pid" 2>/dev/null || true
         rm -f "$PID_FILE"
     fi
 
-    pkill -f "xrk-agt" 2>/dev/null
+    # 兜底：防止 PID_FILE 不准
+    pkill -f "node app.js" 2>/dev/null || true
     sleep 1
 
     ui_success "XRK-AGT 已停止"
+}
+
+# ─── 重启 ─────────────────────────────────────────────────────
+
+restart_service() {
+    local was_running=false
+    if is_running; then
+        was_running=true
+    fi
+
+    # 停止
+    if [[ -f "$PID_FILE" ]]; then
+        local pid
+        pid=$(cat "$PID_FILE")
+        kill "$pid" 2>/dev/null
+        sleep 1
+        kill -9 "$pid" 2>/dev/null || true
+        rm -f "$PID_FILE"
+    fi
+    pkill -f "node app.js" 2>/dev/null || true
+    sleep 1
+
+    # 启动
+    cd "$INSTALL_DIR"
+    ui_info "正在重启 XRK-AGT..."
+    nohup node app.js > /dev/null 2>&1 &
+    local pid=$!
+    echo "$pid" > "$PID_FILE"
+
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        ui_success "XRK-AGT 已重启 (PID: $pid)"
+    else
+        rm -f "$PID_FILE"
+        ui_error "XRK-AGT 重启失败"
+        return 1
+    fi
 }
 
 # ─── 重装 ─────────────────────────────────────────────────────
@@ -181,14 +230,16 @@ xrk_manage() {
         choice=$(ui_submenu "📁 XRK-AGT 管理" "请选择操作:" \
             "1" "🚀 启动 XRK-AGT" \
             "2" "🛑 停止 XRK-AGT" \
-            "3" "🔄 重装 XRK-AGT" \
-            "4" "🗑️  卸载 XRK-AGT")
+            "3" "🔄 重启 XRK-AGT" \
+            "4" "🔄 重装 XRK-AGT" \
+            "5" "🗑️  卸载 XRK-AGT")
 
         case "$choice" in
             1) start_service ;;
             2) stop_service ;;
-            3) reinstall_project ;;
-            4) uninstall_project ;;
+            3) restart_service ;;
+            4) reinstall_project ;;
+            5) uninstall_project ;;
             b) break ;;
         esac
     done
@@ -201,14 +252,13 @@ if [ "$1" == "--auto" ]; then
         start)   start_service > /dev/null 2>&1 ;;
         stop)    stop_service > /dev/null 2>&1 ;;
         restart)
-            stop_service > /dev/null 2>&1
-            sleep 1
-            start_service > /dev/null 2>&1
+            restart_service > /dev/null 2>&1
             ;;
         status)  show_status ;;
         is-installed) is_installed && echo "yes" || echo "no" ;;
+        uninstall) uninstall_project ;;
         *)
-            echo "用法: manage.sh --auto {start|stop|restart|status|is-installed}"
+            echo "用法: manage.sh --auto {start|stop|restart|status|is-installed|uninstall}"
             exit 1
             ;;
     esac

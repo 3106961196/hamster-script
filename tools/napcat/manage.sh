@@ -424,8 +424,9 @@ if [ "$1" == "--auto" ]; then
         stop)    stop_qq "$3" > /dev/null 2>&1 ;;
         status)  show_status ;;
         is-installed) is_installed && echo "yes" || echo "no" ;;
+        uninstall) uninstall_project ;;
         *)
-            echo "用法: manage.sh --auto {start <qq>|stop <qq>|status|is-installed}"
+            echo "用法: manage.sh --auto {start <qq>|stop <qq>|status|is-installed|uninstall}"
             exit 1
             ;;
     esac
