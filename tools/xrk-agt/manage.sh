@@ -56,33 +56,9 @@ start_service() {
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
-
-    ensure_log_dir
-
     cd "$INSTALL_DIR"
     ui_info "正在启动 XRK-AGT..."
-
-    if command -v pm2 &>/dev/null; then
-        pm2 start npm --name "xrk-agt" -- start > /dev/null 2>&1
-        sleep 2
-        local pid
-        pid=$(pm2 pid xrk-agt 2>/dev/null)
-        [[ -n "$pid" && "$pid" != "0" ]] && echo "$pid" > "$PID_FILE"
-    else
-        nohup node app.js > "$LOG_FILE" 2>&1 &
-        echo $! > "$PID_FILE"
-        disown $!
-    fi
-
-    sleep 3
-
-    if is_running; then
-        ui_success "XRK-AGT 已启动 (PID: $(get_pid))"
-        if ui_confirm "是否进入控制台？"; then console_menu; fi
-    else
-        ui_error "XRK-AGT 启动失败，请检查日志: $LOG_FILE"
-        return 1
-    fi
+    node app.js
 }
 
 # ─── 停止 ─────────────────────────────────────────────────────
@@ -194,63 +170,6 @@ show_status() {
     fi
 }
 
-# ─── 控制台功能 ──────────────────────────────────────────────
-
-console_logs() {
-    local log_content
-    if command -v pm2 &>/dev/null && pm2 describe xrk-agt &>/dev/null 2>&1; then
-        log_content=$(pm2 logs xrk-agt --lines 100 --nostream --raw 2>/dev/null)
-    elif [[ -f "$LOG_FILE" ]]; then
-        log_content=$(tail -100 "$LOG_FILE" 2>/dev/null)
-    else
-        ui_msg "未找到日志文件" "提示"; return
-    fi
-    [ -z "$log_content" ] && log_content="暂无日志"
-    ui_text "$log_content" "📋 XRK-AGT 日志（最近100行）"
-}
-
-console_tail() {
-    local log_source="$LOG_FILE"
-    if command -v pm2 &>/dev/null && pm2 describe xrk-agt &>/dev/null 2>&1; then
-        log_source=$(pm2 info xrk-agt 2>/dev/null | grep "out log path" | awk "{print \$NF}")
-        [ -z "$log_source" ] && log_source="$LOG_FILE"
-    fi
-    if [[ ! -f "$log_source" ]]; then
-        ui_msg "未找到日志文件" "提示"; return
-    fi
-    ui_info "进入实时日志模式（按 Ctrl+C 返回）..."
-    clear; tail -f "$log_source"
-}
-
-console_send() {
-    if ! is_running; then
-        ui_msg "XRK-AGT 未在运行，请先启动" "提示"; return
-    fi
-    local pid; pid=$(get_pid)
-    [ -z "$pid" ] && { ui_msg "无法获取进程 PID" "错误"; return; }
-    local cmd; cmd=$(ui_input "输入要发送的命令" "")
-    [ -z "$cmd" ] && return
-    echo "$cmd" > /proc/$pid/fd/0 2>/dev/null &&
-        ui_success "命令已发送: $cmd" ||
-        ui_error "命令发送失败（进程可能不支持标准输入）"
-}
-
-console_menu() {
-    while true; do
-        local choice
-        choice=$(ui_submenu "💻 XRK-AGT 控制台" "请选择操作:" \
-            "1" "📋 查看日志" \
-            "2" "📡 实时日志" \
-            "3" "⌨️  发送命令")
-        case "$choice" in
-            1) console_logs ;;
-            2) console_tail ;;
-            3) console_send ;;
-            b) break ;;
-        esac
-    done
-}
-
 # ─── 交互式菜单 ──────────────────────────────────────────────
 
 xrk_manage() {
@@ -262,16 +181,14 @@ xrk_manage() {
         choice=$(ui_submenu "📁 XRK-AGT 管理" "请选择操作:" \
             "1" "🚀 启动 XRK-AGT" \
             "2" "🛑 停止 XRK-AGT" \
-            "3" "💻 控制台" \
-            "4" "🔄 重装 XRK-AGT" \
-            "5" "🗑️  卸载 XRK-AGT")
+            "3" "🔄 重装 XRK-AGT" \
+            "4" "🗑️  卸载 XRK-AGT")
 
         case "$choice" in
             1) start_service ;;
             2) stop_service ;;
-            3) console_menu ;;
-            4) reinstall_project ;;
-            5) uninstall_project ;;
+            3) reinstall_project ;;
+            4) uninstall_project ;;
             b) break ;;
         esac
     done
