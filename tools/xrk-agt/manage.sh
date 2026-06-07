@@ -31,16 +31,25 @@ is_running() {
     if [[ -f "$PID_FILE" ]]; then
         local pid
         pid=$(cat "$PID_FILE" 2>/dev/null)
-        [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null && return 0
+        if [[ -n "$pid" ]] && kill -0 "$pid" 2>/dev/null; then
+            # 验证 PID 确实指向 node app.js 进程
+            local cmdline
+            cmdline=$(cat /proc/$pid/cmdline 2>/dev/null | tr '\0' ' ')
+            if echo "$cmdline" | grep -q "node.*app\.js"; then
+                return 0
+            fi
+        fi
+        # PID_FILE 中的 PID 无效，清理
+        rm -f "$PID_FILE"
     fi
-    pgrep -f "xrk-agt" > /dev/null 2>&1
+    return 1
 }
 
 get_pid() {
     if [[ -f "$PID_FILE" ]]; then
         cat "$PID_FILE" 2>/dev/null
     else
-        pgrep -f "xrk-agt" 2>/dev/null | head -1
+        echo ""
     fi
 }
 
@@ -158,9 +167,12 @@ reinstall_project() {
             pm2 stop xrk-agt > /dev/null 2>&1
             pm2 delete xrk-agt > /dev/null 2>&1
         fi
-        pkill -f "xrk-agt" 2>/dev/null
-        sleep 1
-        rm -f "$PID_FILE"
+        if [[ -f "$PID_FILE" ]]; then
+            local pid
+            pid=$(cat "$PID_FILE")
+            kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null || true
+            rm -f "$PID_FILE"
+        fi
     fi
 
     ui_info "正在拉取最新代码..."
@@ -196,13 +208,15 @@ uninstall_project() {
     fi
 
     if is_running; then
-        if command -v pm2 &>/dev/null && pm2 describe xrk-agt &>/dev/null; then
-            pm2 stop xrk-agt > /dev/null 2>&1
-            pm2 delete xrk-agt > /dev/null 2>&1
+        if [[ -f "$PID_FILE" ]]; then
+            local pid
+            pid=$(cat "$PID_FILE")
+            kill "$pid" 2>/dev/null; sleep 1; kill -9 "$pid" 2>/dev/null || true
+            rm -f "$PID_FILE"
         fi
-        pkill -f "xrk-agt" 2>/dev/null
+        # 兜底
+        pkill -f "node app.js" 2>/dev/null || true
         sleep 1
-        rm -f "$PID_FILE"
     fi
 
     rm -rf "$INSTALL_DIR"

@@ -129,7 +129,13 @@ project_menu() {
         type=$(project_type "$selected")
 
         if [[ "${_installed[$selected]}" == "yes" ]]; then
-            project_installed_actions "$selected" "$type"
+            # 已安装 → 工具项目直接进管理界面，static 提示路径
+            if [[ "$type" == "tool" ]]; then
+                ui_clear
+                bash "$(project_manage_script "$selected")"
+            else
+                ui_msg "$display 安装目录: /root/cs/$selected" "提示"
+            fi
         else
             if ui_confirm "⚠️ $display 尚未安装\n\n是否立即安装？"; then
                 project_do_install "$selected" "$type"
@@ -138,38 +144,6 @@ project_menu() {
     done
 }
 
-# ─── 已安装项目的操作菜单 ──────────────────────────────────
-
-project_installed_actions() {
-    local name="$1"
-    local type="$2"
-    local display
-    display=$(project_display_name "$name")
-
-    local action
-    action=$(ui_action "📁 $display（已安装）" \
-        "manage" "📋 管理" \
-        "uninstall" "🗑️  卸载" \
-        "back" "⬅️  返回")
-
-    case "$action" in
-        manage)
-            if [[ "$type" == "tool" ]]; then
-                ui_clear
-                bash "$(project_manage_script "$name")"
-            else
-                ui_msg "$display 没有独立的管理界面\n安装目录: /root/cs/$name" "提示"
-            fi
-            ;;
-        uninstall)
-            if ui_confirm "⚠️  确定要卸载 $display 吗？\n此操作不可恢复！"; then
-                project_do_uninstall "$name" "$type"
-            fi
-            ;;
-    esac
-}
-
-# ─── 安装 ───────────────────────────────────────────────────
 
 project_do_install() {
     local name="$1"
@@ -205,26 +179,4 @@ project_do_install() {
     esac
 }
 
-# ─── 卸载 ───────────────────────────────────────────────────
 
-project_do_uninstall() {
-    local name="$1"
-    local type="$2"
-
-    case "$type" in
-        tool)
-            ui_info "正在卸载 $name ..."
-            bash "$(project_manage_script "$name")" --auto uninstall 2>&1
-            ui_success "$name 卸载完成"
-            ;;
-        static)
-            local target="/root/cs/$name"
-            if [[ -d "$target" ]]; then
-                rm -rf "$target"
-                ui_success "$name 已卸载"
-            else
-                ui_msg "$name 未安装" "提示"
-            fi
-            ;;
-    esac
-}
