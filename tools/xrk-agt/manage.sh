@@ -72,11 +72,16 @@ start_service() {
     if [[ ! -d "node_modules" ]]; then
         ui_info "正在安装依赖..."
         if [[ -f "pnpm-lock.yaml" ]]; then
-            pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            if command -v pnpm &>/dev/null; then
+                pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            else
+                ui_info "pnpm 未安装，使用 npm install --legacy-peer-deps"
+                npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            fi
         elif [[ -f "yarn.lock" ]]; then
             yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
         else
-            npm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
         fi
     fi
 
@@ -147,11 +152,16 @@ restart_service() {
     if [[ ! -d "node_modules" ]]; then
         ui_info "正在安装依赖..."
         if [[ -f "pnpm-lock.yaml" ]]; then
-            pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            if command -v pnpm &>/dev/null; then
+                pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            else
+                ui_info "pnpm 未安装，使用 npm install --legacy-peer-deps"
+                npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            fi
         elif [[ -f "yarn.lock" ]]; then
             yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
         else
-            npm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
+            npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
         fi
     fi
 
