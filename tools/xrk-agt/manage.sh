@@ -93,16 +93,69 @@ check_mongodb() {
     return 1
 }
 
+# ─── 安装 Redis ────────────────────────────────────────────
+
+install_redis() {
+    if command -v redis-cli &>/dev/null && redis-cli ping 2>/dev/null | grep -q "PONG"; then
+        return 0
+    fi
+
+    ui_info "正在安装 Redis..."
+    if pkg_install "redis-server" 2>&1 || pkg_install "redis" 2>&1; then
+        sleep 1
+        if command -v redis-server &>/dev/null; then
+            nohup redis-server --daemonize yes > /dev/null 2>&1 &
+            sleep 1
+        fi
+        return 0
+    fi
+    return 1
+}
+
+# ─── 安装 MongoDB ─────────────────────────────────────────
+
+install_mongodb() {
+    if command -v mongod &>/dev/null; then
+        if command -v mongosh &>/dev/null; then
+            mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
+        elif command -v mongo &>/dev/null; then
+            mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
+        fi
+    fi
+
+    ui_info "正在安装 MongoDB..."
+    if pkg_install "mongodb-org" 2>&1 || pkg_install "mongodb" 2>&1 || pkg_install "mongod" 2>&1; then
+        sleep 1
+        if command -v mongod &>/dev/null; then
+            mkdir -p /tmp/mongodb /tmp/mongolog 2>/dev/null
+            nohup mongod --dbpath /tmp/mongodb --logpath /tmp/mongolog/mongod.log --fork > /dev/null 2>&1 &
+            sleep 2
+        fi
+        return 0
+    fi
+    return 1
+}
+
 # 检查依赖服务
 check_dependencies() {
     local ok=true
     if ! check_redis; then
-        ui_msg "Redis 未运行且无法自动启动\nXRK-AGT 依赖 Redis，请手动安装并启动" "错误"
-        ok=false
+        ui_info "Redis 未运行，尝试自动安装..."
+        if ! install_redis; then
+            ui_msg "Redis 安装失败，XRK-AGT 可能无法正常运行" "错误"
+            ok=false
+        else
+            ui_success "Redis 安装并启动成功"
+        fi
     fi
     if ! check_mongodb; then
-        ui_msg "MongoDB 未运行且无法自动启动\nXRK-AGT 依赖 MongoDB，请手动安装并启动" "错误"
-        ok=false
+        ui_info "MongoDB 未运行，尝试自动安装..."
+        if ! install_mongodb; then
+            ui_msg "MongoDB 安装失败，XRK-AGT 可能无法正常运行" "错误"
+            ok=false
+        else
+            ui_success "MongoDB 安装并启动成功"
+        fi
     fi
     if [[ "$ok" == "false" ]]; then
         return 1

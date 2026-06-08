@@ -105,6 +105,37 @@ pkg_install() {
         package="nodejs"
     fi
 
+    # MongoDB 特殊处理：需要通过官方源安装
+    if [[ "$package" == "mongodb-org" ]]; then
+        case "$pkg_manager" in
+            apt)
+                if command -v curl &>/dev/null; then
+                    curl -fsSL https://www.mongodb.org/static/pgp/server-7.0.asc | \
+                        gpg --dearmor -o /usr/share/keyrings/mongodb-server-7.0.gpg 2>/dev/null || true
+                    local codename
+                    codename=$(lsb_release -cs 2>/dev/null || echo jammy)
+                    echo "deb [ signed-by=/usr/share/keyrings/mongodb-server-7.0.gpg ] https://repo.mongodb.org/apt/ubuntu ${codename}/mongodb-org/7.0 multiverse" > /etc/apt/sources.list.d/mongodb-org-7.0.list 2>/dev/null || true
+                    apt update 2>&1 | tail -1
+                fi
+                apt install -y mongodb-org 2>&1 || return 1
+                return $?
+                ;;
+            yum)
+                cat > /etc/yum.repos.d/mongodb-org-7.0.repo <<'YUMEOF'
+[mongodb-org-7.0]
+name=MongoDB Repository
+baseurl=https://repo.mongodb.org/yum/redhat/$releasever/mongodb-org/7.0/$basearch/
+gpgcheck=1
+enabled=1
+gpgkey=https://www.mongodb.org/static/pgp/server-7.0.asc
+YUMEOF
+                yum install -y mongodb-org 2>&1 || return 1
+                return $?
+                ;;
+            *) echo "错误: 不支持的包管理器"; return 1 ;;
+        esac
+    fi
+
     case "$pkg_manager" in
         apt) DEBIAN_FRONTEND=noninteractive apt install -y "$package" ;;
         yum) yum install -y "$package" ;;
