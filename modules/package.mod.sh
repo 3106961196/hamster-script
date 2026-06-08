@@ -40,14 +40,27 @@ package_install() {
         fi
     fi
     
-    local common_packages=("git" "版本控制" "vim" "编辑器" "htop" "系统监控" 
-        "curl" "网络工具" "wget" "下载工具" "tmux" "终端复用"
-        "jq" "JSON处理" "tree" "目录树" "ncdu" "磁盘分析"
-        "net-tools" "网络工具集" "fzf" "模糊搜索" "ripgrep" "快速搜索")
+    # 常用软件列表：优先读取配置文件，否则使用默认值
+    local common_file="${SCRIPT_DIR:-.}/common_packages.conf"
+    local common_packages=()
+    if [[ -f "$common_file" ]]; then
+        while IFS='|' read -r name desc _rest; do
+            [[ -z "$name" || "$name" =~ ^# ]] && continue
+            common_packages+=("$name" "${desc:-}")
+        done < "$common_file"
+    fi
+    
+    if [[ ${#common_packages[@]} -eq 0 ]]; then
+        common_packages=("git" "版本控制" "vim" "编辑器" "htop" "系统监控"
+            "curl" "网络工具" "wget" "下载工具" "tmux" "终端复用"
+            "jq" "JSON处理" "tree" "目录树" "ncdu" "磁盘分析"
+            "net-tools" "网络工具集" "fzf" "模糊搜索" "ripgrep" "快速搜索")
+    fi
     
     if [[ ${#items[@]} -eq 0 ]]; then
         items=("${common_packages[@]}")
     else
+        ui_msg "未找到 \"${search_term}\" 相关结果，显示常用软件" "提示"
         items+=("" "" "── 常用软件 ──" "")
         items+=("${common_packages[@]}")
     fi

@@ -64,6 +64,47 @@ pkg_install() {
     local package="$1"
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
+
+    # Node.js 特殊处理：apt 中包名是 nodejs，且版本极老
+    if [[ "$package" == "node" || "$package" == "nodejs" ]]; then
+        if command -v node &>/dev/null; then
+            local major
+            major=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+            if [[ "$major" -ge 18 ]] 2>/dev/null; then
+                echo "Node.js $(node -v) 已满足要求"
+                return 0
+            fi
+        fi
+
+        # 优先尝试 nvm
+        if [[ -s "$HOME/.nvm/nvm.sh" ]]; then
+            source "$HOME/.nvm/nvm.sh"
+            nvm install 20
+            return $?
+        fi
+
+        # 尝试 NodeSource
+        if command -v curl &>/dev/null; then
+            echo "正在通过 NodeSource 安装 Node.js 20..."
+            case "$pkg_manager" in
+                apt)
+                    curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 && \
+                    apt install -y nodejs 2>&1 || return 1
+                    ;;
+                yum)
+                    curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - 2>&1 && \
+                    yum install -y nodejs 2>&1 || return 1
+                    ;;
+                *) echo "错误: 不支持的包管理器"; return 1 ;;
+            esac
+            return $?
+        fi
+
+        # 兜底：直接安装 nodejs（版本可能较老）
+        echo "警告: 无法使用 NodeSource，将通过系统包管理器安装 nodejs（版本可能较老）"
+        package="nodejs"
+    fi
+
     case "$pkg_manager" in
         apt) DEBIAN_FRONTEND=noninteractive apt install -y "$package" ;;
         yum) yum install -y "$package" ;;
