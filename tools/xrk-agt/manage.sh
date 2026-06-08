@@ -10,6 +10,7 @@ PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/.." && pwd)"
 source "$PROJECT_ROOT/lib/core.sh"
 load_lib "ui" 2>/dev/null || source "$PROJECT_ROOT/lib/ui.sh" 2>/dev/null
 load_lib "log" 2>/dev/null || source "$PROJECT_ROOT/lib/log.sh" 2>/dev/null
+load_lib "pkg" 2>/dev/null || source "$PROJECT_ROOT/lib/pkg.sh" 2>/dev/null
 
 REPO_URL="https://github.com/sunflowermm/XRK-AGT"
 INSTALL_DIR="/root/cs/XRK-AGT"
