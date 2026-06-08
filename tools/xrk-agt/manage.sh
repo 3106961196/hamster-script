@@ -56,11 +56,6 @@ get_pid() {
 # ─── 启动 ─────────────────────────────────────────────────────
 
 start_service() {
-    if is_running; then
-        ui_msg "XRK-AGT 已在运行中\nPID: $(get_pid)" "提示"
-        return 0
-    fi
-
     if ! is_installed; then
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
@@ -68,40 +63,22 @@ start_service() {
 
     cd "$INSTALL_DIR"
 
-    # 检查依赖是否已装
-    if [[ ! -d "node_modules" ]]; then
-        ui_info "正在安装依赖..."
-        if [[ -f "pnpm-lock.yaml" ]]; then
-            if command -v pnpm &>/dev/null; then
-                pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
-            else
-                ui_info "pnpm 未安装，使用 npm install --legacy-peer-deps"
-                npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
-            fi
-        elif [[ -f "yarn.lock" ]]; then
-            yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
-        else
-            npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
-        fi
-    fi
-
     ui_info "正在启动 XRK-AGT..."
+    node app.js
+}
 
-    nohup node app.js > /dev/null 2>&1 &
-    local pid=$!
-    echo "$pid" > "$PID_FILE"
+# ─── Debug 启动 ─────────────────────────────────────────────────────
 
-    sleep 2
-    if kill -0 "$pid" 2>/dev/null; then
-        ui_success "XRK-AGT 已启动 (PID: $pid)"
-    else
-        rm -f "$PID_FILE"
-        # 捕获启动错误
-        local err
-        err=$(cd "$INSTALL_DIR" && node app.js 2>&1 | head -5) || true
-        ui_error "XRK-AGT 启动失败：$err"
+start_debug() {
+    if ! is_installed; then
+        ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
+
+    cd "$INSTALL_DIR"
+
+    ui_info "正在以 Debug 模式启动 XRK-AGT..."
+    node debug.js
 }
 
 # ─── 停止 ─────────────────────────────────────────────────────
@@ -136,7 +113,7 @@ stop_service() {
 # ─── 重启 ─────────────────────────────────────────────────────
 
 restart_service() {
-    # 停止
+    # 停止现有进程
     if [[ -f "$PID_FILE" ]]; then
         local pid
         pid=$(cat "$PID_FILE")
@@ -148,38 +125,8 @@ restart_service() {
 
     cd "$INSTALL_DIR"
 
-    # 检查依赖
-    if [[ ! -d "node_modules" ]]; then
-        ui_info "正在安装依赖..."
-        if [[ -f "pnpm-lock.yaml" ]]; then
-            if command -v pnpm &>/dev/null; then
-                pnpm install 2>&1 || { ui_error "依赖安装失败"; return 1; }
-            else
-                ui_info "pnpm 未安装，使用 npm install --legacy-peer-deps"
-                npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
-            fi
-        elif [[ -f "yarn.lock" ]]; then
-            yarn install 2>&1 || { ui_error "依赖安装失败"; return 1; }
-        else
-            npm install --legacy-peer-deps 2>&1 || { ui_error "依赖安装失败"; return 1; }
-        fi
-    fi
-
     ui_info "正在重启 XRK-AGT..."
-    nohup node app.js > /dev/null 2>&1 &
-    local pid=$!
-    echo "$pid" > "$PID_FILE"
-
-    sleep 2
-    if kill -0 "$pid" 2>/dev/null; then
-        ui_success "XRK-AGT 已重启 (PID: $pid)"
-    else
-        rm -f "$PID_FILE"
-        local err
-        err=$(cd "$INSTALL_DIR" && node app.js 2>&1 | head -5) || true
-        ui_error "XRK-AGT 重启失败：$err"
-        return 1
-    fi
+    node app.js
 }
 
 # ─── 重装 ─────────────────────────────────────────────────────
@@ -276,6 +223,7 @@ xrk_manage() {
             "1" "🚀 启动 XRK-AGT" \
             "2" "🛑 停止 XRK-AGT" \
             "3" "🔄 重启 XRK-AGT" \
+            "6" "🐛 Debug 启动 XRK-AGT" \
             "4" "🔄 重装 XRK-AGT" \
             "5" "🗑️  卸载 XRK-AGT")
 
@@ -283,6 +231,7 @@ xrk_manage() {
             1) start_service ;;
             2) stop_service ;;
             3) restart_service ;;
+            6) start_debug ;;
             4) reinstall_project ;;
             5) uninstall_project ;;
             b) break ;;
@@ -294,11 +243,9 @@ xrk_manage() {
 
 if [ "$1" == "--auto" ]; then
     case "$2" in
-        start)   start_service > /dev/null 2>&1 ;;
+        start)   start_service ;;
         stop)    stop_service > /dev/null 2>&1 ;;
-        restart)
-            restart_service > /dev/null 2>&1
-            ;;
+        restart)   restart_service ;;
         status)  show_status ;;
         is-installed) is_installed && echo "yes" || echo "no" ;;
         uninstall) uninstall_project ;;
