@@ -221,19 +221,15 @@ xrk_manage() {
         local choice
         choice=$(ui_submenu "📁 XRK-AGT 管理" "请选择操作:" \
             "1" "🚀 启动 XRK-AGT" \
-            "2" "🛑 停止 XRK-AGT" \
-            "3" "🔄 重启 XRK-AGT" \
-            "6" "🐛 Debug 启动 XRK-AGT" \
-            "4" "🔄 重装 XRK-AGT" \
-            "5" "🗑️  卸载 XRK-AGT")
+            "2" " Debug 启动 XRK-AGT" \
+            "3" "🔄 重装 XRK-AGT" \
+            "4" "🗑️  卸载 XRK-AGT")
 
         case "$choice" in
             1) start_service ;;
-            2) stop_service ;;
-            3) restart_service ;;
-            6) start_debug ;;
-            4) reinstall_project ;;
-            5) uninstall_project ;;
+            2) start_debug ;;
+            3) reinstall_project ;;
+            4) uninstall_project ;;
             b) break ;;
         esac
     done
