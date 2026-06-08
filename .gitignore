@@ -31,3 +31,21 @@ config/projects.yaml
 
 # 用户安装的软件目录
 app/
+
+# 项目临时文件
+log/
+*.pid
+
+# XRK-AGT 相关
+/tmp/xrk-agt.pid
+/tmp/mongodb/
+/tmp/mongolog/
+
+# IDE/编辑器 (扩展)
+*.sublime-*
+*.code-workspace
+
+# AI 工具生成的临时目录
+.claude/
+.codegraph/
+.reasonix/

@@ -56,40 +56,46 @@ get_pid() {
 
 # ─── 启动 ─────────────────────────────────────────────────────
 
-# 检查 Redis 是否可用
-check_redis() {
-    if command -v redis-cli &>/dev/null; then
-        if redis-cli ping 2>/dev/null | grep -q "PONG"; then
-            return 0
-        fi
-    fi
-    # 尝试启动 Redis
+# ─── Redis 状态检查 ────────────────────────────────────────
+
+is_redis_running() {
+    command -v redis-cli &>/dev/null && redis-cli ping 2>/dev/null | grep -q "PONG"
+}
+
+is_redis_installed() {
+    command -v redis-server &>/dev/null || command -v redis-cli &>/dev/null
+}
+
+start_redis() {
     if command -v redis-server &>/dev/null; then
         nohup redis-server --daemonize yes > /dev/null 2>&1 &
         sleep 1
-        redis-cli ping 2>/dev/null | grep -q "PONG" && return 0
+        is_redis_running && return 0
     fi
     return 1
 }
 
-# 检查 MongoDB 是否可用
-check_mongodb() {
+# ─── MongoDB 状态检查 ─────────────────────────────────────
+
+is_mongodb_running() {
     if command -v mongosh &>/dev/null; then
-        if mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null; then
-            return 0
-        fi
+        mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
     elif command -v mongo &>/dev/null; then
-        if mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null; then
-            return 0
-        fi
+        mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
     fi
-    # 尝试启动 MongoDB
+    return 1
+}
+
+is_mongodb_installed() {
+    command -v mongod &>/dev/null
+}
+
+start_mongodb() {
     if command -v mongod &>/dev/null; then
         mkdir -p /tmp/mongodb /tmp/mongolog 2>/dev/null
         nohup mongod --dbpath /tmp/mongodb --logpath /tmp/mongolog/mongod.log --fork > /dev/null 2>&1 &
         sleep 2
-        mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
-        mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
+        is_mongodb_running && return 0
     fi
     return 1
 }
@@ -97,18 +103,11 @@ check_mongodb() {
 # ─── 安装 Redis ────────────────────────────────────────────
 
 install_redis() {
-    if command -v redis-cli &>/dev/null && redis-cli ping 2>/dev/null | grep -q "PONG"; then
-        return 0
-    fi
-
     ui_info "正在安装 Redis..."
     if pkg_install "redis-server" 2>&1 || pkg_install "redis" 2>&1; then
         sleep 1
-        if command -v redis-server &>/dev/null; then
-            nohup redis-server --daemonize yes > /dev/null 2>&1 &
-            sleep 1
-        fi
-        return 0
+        start_redis
+        return $?
     fi
     return 1
 }
@@ -116,32 +115,30 @@ install_redis() {
 # ─── 安装 MongoDB ─────────────────────────────────────────
 
 install_mongodb() {
-    if command -v mongod &>/dev/null; then
-        if command -v mongosh &>/dev/null; then
-            mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
-        elif command -v mongo &>/dev/null; then
-            mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
-        fi
-    fi
-
     ui_info "正在安装 MongoDB..."
     if pkg_install "mongodb-org" 2>&1 || pkg_install "mongodb" 2>&1 || pkg_install "mongod" 2>&1; then
         sleep 1
-        if command -v mongod &>/dev/null; then
-            mkdir -p /tmp/mongodb /tmp/mongolog 2>/dev/null
-            nohup mongod --dbpath /tmp/mongodb --logpath /tmp/mongolog/mongod.log --fork > /dev/null 2>&1 &
-            sleep 2
-        fi
-        return 0
+        start_mongodb
+        return $?
     fi
     return 1
 }
 
-# 检查依赖服务
+# 检查依赖服务：运行中 → 已安装尝试启动 → 未安装则安装
 check_dependencies() {
     local ok=true
-    if ! check_redis; then
-        ui_info "Redis 未运行，尝试自动安装..."
+
+    # Redis 检查
+    if is_redis_running; then
+        : # 已在运行，跳过
+    elif is_redis_installed; then
+        ui_info "Redis 已安装但未运行，正在启动..."
+        if ! start_redis; then
+            ui_msg "Redis 启动失败" "错误"
+            ok=false
+        fi
+    else
+        ui_info "Redis 未安装，正在安装..."
         if ! install_redis; then
             ui_msg "Redis 安装失败，XRK-AGT 可能无法正常运行" "错误"
             ok=false
@@ -149,8 +146,18 @@ check_dependencies() {
             ui_success "Redis 安装并启动成功"
         fi
     fi
-    if ! check_mongodb; then
-        ui_info "MongoDB 未运行，尝试自动安装..."
+
+    # MongoDB 检查
+    if is_mongodb_running; then
+        : # 已在运行，跳过
+    elif is_mongodb_installed; then
+        ui_info "MongoDB 已安装但未运行，正在启动..."
+        if ! start_mongodb; then
+            ui_msg "MongoDB 启动失败" "错误"
+            ok=false
+        fi
+    else
+        ui_info "MongoDB 未安装，正在安装..."
         if ! install_mongodb; then
             ui_msg "MongoDB 安装失败，XRK-AGT 可能无法正常运行" "错误"
             ok=false
@@ -158,9 +165,9 @@ check_dependencies() {
             ui_success "MongoDB 安装并启动成功"
         fi
     fi
-    if [[ "$ok" == "false" ]]; then
-        return 1
-    fi
+
+    [[ "$ok" == "false" ]] && return 1
+    return 0
 }
 
 start_service() {
