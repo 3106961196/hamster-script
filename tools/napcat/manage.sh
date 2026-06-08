@@ -158,19 +158,9 @@ start_qq() {
 
     ui_info "正在启动 QQ $qq_num（端口: $port）..."
 
-    # 使用 xvfb 启动 QQ（后台运行）
+    # 前台启动
     export DISPLAY="${DISPLAY:-:99}"
-    nohup xvfb-run -a "$QQ_BIN" --no-sandbox -q "$qq_num" > /dev/null 2>&1 &
-    local pid=$!
-    disown $!
-
-    sleep 3
-    if kill -0 "$pid" 2>/dev/null || pgrep -f "qq --no-sandbox -q $qq_num" > /dev/null 2>&1; then
-        ui_success "QQ $qq_num 已启动"
-    else
-        ui_error "QQ $qq_num 启动失败，请检查 xvfb 和 QQ 安装"
-        return 1
-    fi
+    xvfb-run -a "$QQ_BIN" --no-sandbox -q "$qq_num"
 }
 
 # ─── 停止 QQ ─────────────────────────────────────────────────
@@ -247,16 +237,52 @@ modify_qq_interactive() {
     add_update_qq "$new_qq" "$new_port"
 }
 
-# ─── QQ 操作菜单 ────────────────────────────────────────────
+# ─── Debug 启动 QQ ──────────────────────────────────────────
+
+start_qq_debug() {
+    local qq_num="$1"
+    local config_file="${BASE_DIR}/qq_${qq_num}.json"
+
+    if [ ! -f "$config_file" ]; then
+        ui_error "找不到 QQ $qq_num 的配置文件"
+        return 1
+    fi
+
+    local port
+    port=$(jq -r '.port // 2537' "$config_file")
+
+    # 检查是否已在运行
+    if pgrep -f "qq --no-sandbox -q $qq_num" > /dev/null 2>&1; then
+        ui_msg "QQ $qq_num 已在运行中" "提示"
+        return 0
+    fi
+
+    # 检查安装
+    if ! is_installed; then
+        ui_error "NapCat 未正确安装，请先安装"
+        return 1
+    fi
+
+    # 生成配置文件
+    generate_configs "$qq_num" "$port"
+
+    ui_info "正在启动 QQ $qq_num（Debug 模式，端口: $port）..."
+
+    # 前台 Debug 启动
+    export DISPLAY="${DISPLAY:-:99}"
+    xvfb-run -a "$QQ_BIN" --no-sandbox -q "$qq_num" --debug
+}
+
+# ─── QQ 操作函数 ────────────────────────────────────────────
 
 qq_manage_start() {
     local qq_num="$1"
     start_qq "$qq_num"
 }
 
-qq_manage_stop() {
+qq_manage_debug() {
     local qq_num="$1"
-    stop_qq "$qq_num"
+    start_qq_debug "$qq_num"
 }
 
 qq_manage_remove() {
@@ -294,6 +320,44 @@ select_qq_and_action() {
     [ -z "$selected" ] && return
 
     $action_func "$selected"
+}
+
+# ─── 直接启动（同时输入 QQ 号和端口） ──────────────────────
+
+start_qq_interactive() {
+    local qq_num
+    qq_num=$(ui_input "请输入 QQ 账号" "")
+    [ -z "$qq_num" ] && return
+
+    local port
+    port=$(ui_input "请输入 WebSocket 端口" "2537")
+    [ -z "$port" ] && port=2537
+
+    # 确保配置文件存在
+    mkdir -p "$BASE_DIR"
+    echo '{"qq": "'$qq_num'", "port": '$port'}' > "${BASE_DIR}/qq_${qq_num}.json"
+
+    # 根据 action 调用对应函数
+    start_qq "$qq_num"
+}
+
+# ─── Debug 启动（同时输入 QQ 号和端口） ────────────────────
+
+debug_qq_interactive() {
+    local qq_num
+    qq_num=$(ui_input "请输入 QQ 账号" "")
+    [ -z "$qq_num" ] && return
+
+    local port
+    port=$(ui_input "请输入 WebSocket 端口" "2537")
+    [ -z "$port" ] && port=2537
+
+    # 确保配置文件存在
+    mkdir -p "$BASE_DIR"
+    echo '{"qq": "'$qq_num'", "port": '$port'}' > "${BASE_DIR}/qq_${qq_num}.json"
+
+    # 根据 action 调用对应函数
+    start_qq_debug "$qq_num"
 }
 
 # ─── 重装 ───────────────────────────────────────────────────
@@ -351,24 +415,22 @@ napcat_manage() {
 
         local choice
         choice=$(ui_submenu "📁 NapCat 管理" "请选择操作:" \
-            "1" "🚀 启动指定 QQ" \
-            "2" "🛑 停止指定 QQ" \
-            "3" "📋 全部状态" \
-            "4" "➕ 添加 QQ 账号" \
-            "5" "✏️  修改 QQ 配置" \
-            "6" "🗑️  删除 QQ 账号" \
-            "7" "🔄 重装 NapCat" \
-            "8" "🗑️  卸载 NapCat")
+            "1" "🚀 启动 NapCat" \
+            "2" "🐛 Debug 启动 NapCat" \
+            "3" "🔄 重装 NapCat" \
+            "4" "🗑️  卸载 NapCat" \
+            "5" "➕ 添加 QQ 账号" \
+            "6" "✏️  修改 QQ 配置" \
+            "7" "🗑️  删除 QQ 账号")
 
         case "$choice" in
-            1) select_qq_and_action "启动" qq_manage_start ;;
-            2) select_qq_and_action "停止" qq_manage_stop ;;
-            3) show_all_status ;;
-            4) add_qq_interactive ;;
-            5) modify_qq_interactive ;;
-            6) select_qq_and_action "删除" qq_manage_remove ;;
-            7) reinstall_project ;;
-            8) uninstall_project ;;
+            1) start_qq_interactive ;;
+            2) debug_qq_interactive ;;
+            3) reinstall_project ;;
+            4) uninstall_project ;;
+            5) add_qq_interactive ;;
+            6) modify_qq_interactive ;;
+            7) select_qq_and_action "删除" qq_manage_remove ;;
             b) break ;;
         esac
     done
@@ -420,13 +482,13 @@ show_status() {
 
 if [ "$1" == "--auto" ]; then
     case "$2" in
-        start)   start_qq "$3" > /dev/null 2>&1 ;;
-        stop)    stop_qq "$3" > /dev/null 2>&1 ;;
-        status)  show_status ;;
+        start)       start_qq "$3" ;;
+        debug)       start_qq_debug "$3" ;;
+        status)      show_status ;;
         is-installed) is_installed && echo "yes" || echo "no" ;;
-        uninstall) uninstall_project ;;
+        uninstall)   uninstall_project ;;
         *)
-            echo "用法: manage.sh --auto {start <qq>|stop <qq>|status|is-installed|uninstall}"
+            echo "用法: manage.sh --auto {start <qq>|debug <qq>|status|is-installed|uninstall}"
             exit 1
             ;;
     esac

@@ -335,7 +335,6 @@ main() {
     log "================== NapCat 安装完成 =================="
     log "NapCat 目录: $TARGET_FOLDER/napcat"
     log "WEBUI_TOKEN 请查看: $TARGET_FOLDER/napcat/config/webui.json"
-    log "使用 nt 命令管理多QQ账号"
     echo ""
 }
 
