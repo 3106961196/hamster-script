@@ -55,11 +55,67 @@ get_pid() {
 
 # ─── 启动 ─────────────────────────────────────────────────────
 
+# 检查 Redis 是否可用
+check_redis() {
+    if command -v redis-cli &>/dev/null; then
+        if redis-cli ping 2>/dev/null | grep -q "PONG"; then
+            return 0
+        fi
+    fi
+    # 尝试启动 Redis
+    if command -v redis-server &>/dev/null; then
+        nohup redis-server --daemonize yes > /dev/null 2>&1 &
+        sleep 1
+        redis-cli ping 2>/dev/null | grep -q "PONG" && return 0
+    fi
+    return 1
+}
+
+# 检查 MongoDB 是否可用
+check_mongodb() {
+    if command -v mongosh &>/dev/null; then
+        if mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null; then
+            return 0
+        fi
+    elif command -v mongo &>/dev/null; then
+        if mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null; then
+            return 0
+        fi
+    fi
+    # 尝试启动 MongoDB
+    if command -v mongod &>/dev/null; then
+        mkdir -p /tmp/mongodb /tmp/mongolog 2>/dev/null
+        nohup mongod --dbpath /tmp/mongodb --logpath /tmp/mongolog/mongod.log --fork > /dev/null 2>&1 &
+        sleep 2
+        mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
+        mongo --eval "db.runCommand({ping:1})" --quiet 2>/dev/null && return 0
+    fi
+    return 1
+}
+
+# 检查依赖服务
+check_dependencies() {
+    local ok=true
+    if ! check_redis; then
+        ui_msg "Redis 未运行且无法自动启动\nXRK-AGT 依赖 Redis，请手动安装并启动" "错误"
+        ok=false
+    fi
+    if ! check_mongodb; then
+        ui_msg "MongoDB 未运行且无法自动启动\nXRK-AGT 依赖 MongoDB，请手动安装并启动" "错误"
+        ok=false
+    fi
+    if [[ "$ok" == "false" ]]; then
+        return 1
+    fi
+}
+
 start_service() {
     if ! is_installed; then
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
+
+    check_dependencies || return 1
 
     cd "$INSTALL_DIR"
 
@@ -74,6 +130,8 @@ start_debug() {
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
+
+    check_dependencies || return 1
 
     cd "$INSTALL_DIR"
 
