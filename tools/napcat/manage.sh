@@ -526,14 +526,16 @@ _pick_qq() {
 
     # 检查配置文件是否存在且有内容
     if [ ! -f "$NAPCATBOT_FILE" ]; then
-        ui_msg "没有已配置的 QQ 账号，请先添加" "注意"
+        ui_error "没有已配置的 QQ 账号，请先添加"
+  ui_pause "按 Enter 返回."
         return 1
     fi
 
     local count
     count=$(jq 'length' "$NAPCATBOT_FILE" 2>/dev/null)
     if [ -z "$count" ] || [ "$count" -eq 0 ] 2>/dev/null; then
-        ui_msg "没有已配置的 QQ 账号，请先添加" "注意"
+        ui_error "没有已配置的 QQ 账号，请先添加"
+  ui_pause "按 Enter 返回."
         return 1
     fi
 
@@ -544,7 +546,8 @@ _pick_qq() {
     done < <(jq -r '.[] | "\(.qq)\tQQ: \(.qq) | 端口: \(.port)"' "$NAPCATBOT_FILE" 2>/dev/null)
 
     if [ ${#items[@]} -eq 0 ]; then
-        ui_msg "没有已配置的 QQ 账号，请先添加" "注意"
+        ui_error "没有已配置的 QQ 账号，请先添加"
+  ui_pause "按 Enter 返回."
         return 1
     fi
 
@@ -685,15 +688,8 @@ napcat_manage() {
     _nc_load_deps || return 1
 
     while true; do
-        local status
-        if is_installed; then
-            status="已安装"
-        else
-            status="未安装"
-        fi
-
         local choice
-        choice=$(ui_submenu "📁 NapCat 管理（$status）" "请选择操作:" \
+        choice=$(ui_submenu "📁 NapCat 管理" "请选择操作:" \
             "1" "🚀 启动 QQ" \
             "2" "➕ 添加账号" \
             "3" "✏️  修改配置" \
