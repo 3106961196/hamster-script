@@ -25,7 +25,6 @@ project_install_script() {
 
 project_check_status() {
     local -n _inst="$1"
-    local -n _run="$2"
     local item key type
 
     for item in "${PROJECT_DEFS[@]}"; do
@@ -37,7 +36,6 @@ project_check_status() {
             script=$(project_manage_script "$key")
             if [[ ! -f "$script" ]]; then
                 _inst["$key"]="no"
-                _run["$key"]=""
                 continue
             fi
 
@@ -45,19 +43,14 @@ project_check_status() {
             result=$(bash "$script" --auto is-installed 2>/dev/null | tr -d '\n')
             if [[ "$result" == "yes" ]]; then
                 _inst["$key"]="yes"
-                _run["$key"]=$(bash "$script" --auto status 2>/dev/null | tr -d '\n')
             else
                 _inst["$key"]="no"
-                _run["$key"]=""
             fi
         else
-            # static 项目：检测目录是否存在
             if [[ -d "/root/cs/$key" ]]; then
                 _inst["$key"]="yes"
-                _run["$key"]=""
             else
                 _inst["$key"]="no"
-                _run["$key"]=""
             fi
         fi
     done
@@ -96,8 +89,7 @@ project_menu() {
     while true; do
         # 一次性检测所有项目状态
         local -A _installed=()
-        local -A _run_status=()
-        project_check_status _installed _run_status
+        project_check_status _installed
 
         # 构建菜单项
         local items=()
@@ -109,11 +101,7 @@ project_menu() {
 
             local status_text
             if [[ "${_installed[$key]}" == "yes" ]]; then
-                if [[ "$type" == "tool" ]] && [[ "${_run_status[$key]}" == "运行中" ]]; then
-                    status_text="✅ 已安装 🟢 运行中"
-                else
-                    status_text="✅ 已安装"
-                fi
+                status_text="✅ 已安装"
             else
                 status_text="⚪ 未安装"
             fi
