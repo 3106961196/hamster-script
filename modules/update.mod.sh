@@ -24,19 +24,6 @@ _update_check() {
     fi
 }
 
-_update_show_changes() {
-    echo ""
-    echo "========== 代码变更统计 =========="
-    git diff --stat HEAD origin/main 2>/dev/null
-    echo "=================================="
-    echo ""
-
-    local diff_summary
-    diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
-    echo "变更概览: $diff_summary 行"
-    echo ""
-}
-
 _update_execute() {
     if git reset --hard origin/main && git clean -f -d; then
         # 恢复文件权限
@@ -49,57 +36,7 @@ _update_execute() {
 # ─── 公开函数 ─────────────────────────────────────────
 
 update_menu() {
-    local result
-    result=$(_update_check)
-    local exit_code=$?
-
-    if [[ $exit_code -eq 2 ]]; then
-        ui_msg "非 Git 安装，无法检查更新" "提示"
-        return
-    fi
-
-    local status current_commit latest_commit
-    if [[ "$result" == "latest" ]]; then
-        status="已是最新版本"
-    else
-        local behind
-        behind=$(echo "$result" | cut -d: -f2)
-        current_commit=$(echo "$result" | cut -d: -f3)
-        latest_commit=$(echo "$result" | cut -d: -f4)
-        status="有新版本 (落后 $behind 个提交)"
-    fi
-
-    local choice
-    choice=$(ui_submenu "脚本更新" "当前版本: $PROJECT_VERSION ($current_commit)\n状态: $status" \
-        "1" "立即更新" \
-        "2" "查看更新日志" \
-        "3" "查看远程变更")
-
-    case "$choice" in
-        1) update_do ;;
-        2) update_changelog ;;
-        3) update_show_changes ;;
-    esac
-}
-
-update_show_changes() {
-    local result
-    result=$(_update_check)
-    local exit_code=$?
-
-    if [[ $exit_code -eq 2 ]]; then
-        ui_msg "非 Git 安装" "提示"
-        return
-    fi
-
-    if [[ "$result" == "latest" ]]; then
-        ui_msg "当前已是最新版本" "提示"
-        return
-    fi
-
-    cd "$PROJECT_ROOT"
-    _update_show_changes
-    ui_msg "按 Enter 返回" "查看完成"
+    update_do
 }
 
 update_do() {
@@ -120,16 +57,29 @@ update_do() {
     fi
 
     cd "$PROJECT_ROOT"
-    _update_show_changes
 
-    if ! ui_confirm "确定要更新脚本吗？"; then
-        return
-    fi
+    # 保存更新前的变更内容
+    local changes diff_summary
+    changes=$(git diff --stat HEAD origin/main 2>/dev/null)
+    diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
 
     ui_info "正在更新脚本..."
 
     if _update_execute; then
         ui_success "脚本更新成功！"
+
+        # 显示更新内容
+        local content
+        content=$(cat <<CHANGELOG
+
+========== 代码变更统计 ==========
+${changes}
+==================================
+
+变更概览: ${diff_summary} 行
+CHANGELOG
+        )
+        ui_text "$content" "更新内容"
 
         echo ""
         for i in 3 2 1; do
@@ -142,18 +92,4 @@ update_do() {
     else
         ui_error "更新失败"
     fi
-}
-
-update_changelog() {
-    ui_info "正在获取更新日志..."
-
-    local changelog
-    changelog=$(curl -sL "https://raw.githubusercontent.com/3106961196/hamster-script/main/CHANGELOG.md" 2>/dev/null | head -100)
-
-    if [[ -z "$changelog" ]]; then
-        ui_msg "无法获取更新日志" "提示"
-        return
-    fi
-
-    ui_text "$changelog" "更新日志"
 }
