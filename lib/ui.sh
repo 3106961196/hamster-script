@@ -5,12 +5,7 @@ UI_TITLE="Hamster Script"
 ui_init() {
     if ! command -v dialog &>/dev/null; then
         echo "错误: dialog 未安装" >&2
-        return 1
     fi
-
-    # 确保 dialog 使用 UTF-8
-    export LC_ALL="${LC_ALL:-C.UTF-8}" 2>/dev/null
-    export LANG="${LANG:-C.UTF-8}" 2>/dev/null
 }
 
 # ─── 核心菜单函数 ─────────────────────────────────────────
@@ -35,57 +30,49 @@ _ui_dialog_pick() {
     local tmp_file
     tmp_file=$(mktemp)
 
-    local dialog_args=(
-        --title "$title"
-        --menu "$prompt"
-        20 76 15
-        --ascii-lines
-    )
+    local height=20
+    local width=76
+    local menu_height=15
+
+    local cmd=(dialog --title "$title" --menu "$prompt" "$height" "$width" "$menu_height" --ascii-lines)
 
     if [[ "$mode" == "checklist" ]]; then
-        dialog_args[2]="--checklist"
+        cmd=(dialog --title "$title" --checklist "$prompt" "$height" "$width" "$menu_height" --ascii-lines)
     fi
 
     # 写入条目
     local i=0
     while [ $i -lt ${#items[@]} ]; do
-        dialog_args+=("${items[$i]}" "${items[$((i+1))]}" off)
+        cmd+=("${items[$i]}" "${items[$((i+1))]}" off)
         i=$((i + 2))
     done
 
     # 添加返回项
     if [[ -n "$extra_key" && -n "$extra_label" ]]; then
-        dialog_args+=("$extra_key" "$extra_label" off)
+        cmd+=("$extra_key" "$extra_label" off)
     fi
 
+    # dialog 的 UI 输出到 stderr，选择结果到 stdout
+    # 用 --stdout 让选择结果输出到 stdout，stderr（UI）重定向到 /dev/tty
     local result
-    result=$(dialog --stdout "${dialog_args[@]}" 2>"$tmp_file" 3>&1 1>&2 2>&3)
+    result=$("${cmd[@]}" 2>/dev/tty)
     local exit_code=$?
-    exec 3>&- 2>/dev/null
 
-    # menu 模式：直接返回选中 key
-    if [[ "$mode" != "checklist" ]]; then
-        echo "$result"
-    else
-        # checklist 模式：从 tmp_file 读取
-        cat "$tmp_file" 2>/dev/null
-    fi
-    rm -f "$tmp_file"
+    echo "$result"
     return $exit_code
 }
 
 ui_select() {
     local title="$1"
     local prompt="${2:-请选择:}"
-    local select_one="${3:-false}"
-    shift 3
+    shift 2
     local items=("$@")
 
     _ui_dialog_pick "$title" "$prompt" '' '' "menu" "${items[@]}"
 }
 
 ui_menu() {
-    ui_select "$1" "${2:-请选择:}" "true" "${@:3}"
+    ui_select "$1" "${2:-请选择:}" "${@:3}"
 }
 
 ui_submenu() {
