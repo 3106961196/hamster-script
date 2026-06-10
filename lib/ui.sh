@@ -34,10 +34,10 @@ _ui_dialog_pick() {
     local width=76
     local menu_height=15
 
-    local cmd=(dialog --title "$title" --menu "$prompt" "$height" "$width" "$menu_height" --ascii-lines)
+    local cmd=(dialog --title "$title" --ascii-lines --menu "$prompt" "$height" "$width" "$menu_height")
 
     if [[ "$mode" == "checklist" ]]; then
-        cmd=(dialog --title "$title" --checklist "$prompt" "$height" "$width" "$menu_height" --ascii-lines)
+        cmd=(dialog --title "$title" --ascii-lines --checklist "$prompt" "$height" "$width" "$menu_height")
     fi
 
     # 写入条目
@@ -120,7 +120,7 @@ ui_input() {
     local default="${2:-}"
 
     local result
-    result=$(dialog --title "输入" --inputbox "$prompt" 10 60 "$default" 2>&1 >/dev/tty)
+    result=$(dialog --title "输入" --inputbox "$prompt" 10 60 "$default" 2>/dev/tty)
     echo "$result"
 }
 
@@ -162,14 +162,14 @@ ui_select_file() {
     local start_dir="${1:-.}"
     local title="${2:-选择文件}"
 
-    dialog --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>&1 >/dev/tty
+    dialog --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
 }
 
 ui_select_dir() {
     local start_dir="${1:-.}"
     local title="${2:-选择目录}"
 
-    dialog --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>&1 >/dev/tty
+    dialog --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
 }
 
 ui_pause() {
