@@ -119,6 +119,7 @@ if ! install_deps; then
     if [[ "$reinstall" =~ ^[Yy] ]]; then
         echo "正在重新安装依赖..."
         rm -rf node_modules pnpm-lock.yaml package-lock.json 2>/dev/null
+        rm -rf ~/.cache/puppeteer 2>/dev/null
         pnpm i
         if [[ $? -ne 0 ]]; then
             echo "错误: 重新安装依赖仍然失败，请检查网络或手动安装"
