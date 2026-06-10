@@ -54,7 +54,7 @@ package_install() {
         common_packages=("git" "版本控制" "vim" "编辑器" "htop" "系统监控"
             "curl" "网络工具" "wget" "下载工具" "tmux" "终端复用"
             "jq" "JSON处理" "tree" "目录树" "ncdu" "磁盘分析"
-            "net-tools" "网络工具集" "fzf" "模糊搜索" "ripgrep" "快速搜索")
+            "net-tools" "网络工具集" "dialog" "对话框" "ripgrep" "快速搜索")
     fi
     
     if [[ ${#items[@]} -eq 0 ]]; then

@@ -100,13 +100,38 @@ fi
 # 安装依赖
 echo "正在安装依赖..."
 cd "$INSTALL_DIR"
-if [[ -f "pnpm-lock.yaml" ]]; then
-    pnpm install
-elif [[ -f "yarn.lock" ]]; then
-    yarn install
-else
-    npm install
+
+install_deps() {
+    if [[ -f "pnpm-lock.yaml" || -f "package.json" ]]; then
+        pnpm i
+    elif [[ -f "yarn.lock" ]]; then
+        yarn install
+    else
+        npm install
+    fi
+    return $?
+}
+
+if ! install_deps; then
+    echo ""
+    echo "警告: 依赖安装失败"
+    read -p "是否尝试重新安装依赖？(y/N): " reinstall
+    if [[ "$reinstall" =~ ^[Yy] ]]; then
+        echo "正在重新安装依赖..."
+        rm -rf node_modules pnpm-lock.yaml package-lock.json 2>/dev/null
+        pnpm i
+        if [[ $? -ne 0 ]]; then
+            echo "错误: 重新安装依赖仍然失败，请检查网络或手动安装"
+            exit 1
+        fi
+    else
+        echo "错误: 依赖安装失败，XRK-AGT 无法正常运行"
+        exit 1
+    fi
 fi
+
+echo ""
+echo "依赖安装成功！"
 
 # ─── 安装 Redis ───────────────────────────────────────────
 
