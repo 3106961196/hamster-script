@@ -34,10 +34,10 @@ _ui_dialog_pick() {
     local width=76
     local menu_height=15
 
-    local cmd=(dialog --title "$title" --ascii-lines --menu "$prompt" "$height" "$width" "$menu_height")
+    local cmd=(dialog --stdout --title "$title" --ascii-lines --menu "$prompt" "$height" "$width" "$menu_height")
 
     if [[ "$mode" == "checklist" ]]; then
-        cmd=(dialog --title "$title" --ascii-lines --checklist "$prompt" "$height" "$width" "$menu_height")
+        cmd=(dialog --stdout --title "$title" --ascii-lines --checklist "$prompt" "$height" "$width" "$menu_height")
     fi
 
     # 写入条目
@@ -52,10 +52,14 @@ _ui_dialog_pick() {
         cmd+=("$extra_key" "$extra_label" off)
     fi
 
-    # dialog 的 UI 输出到 stderr，选择结果到 stdout
-    # 用 --stdout 让选择结果输出到 stdout，stderr（UI）重定向到 /dev/tty
+    # dialog 行为:
+    #   UI(界面) 输出到 stderr (fd 2)
+    #   选择结果到 stdout (fd 1) —— 加了 --stdout 后
+    #
+    # 需求: UI 在终端显示, 选择结果由 $() 捕获
+    # 技巧: fd3->stdout(供 $() 捕获), fd2->tty(UI显示)
     local result
-    result=$("${cmd[@]}" 2>/dev/tty)
+    result=$("${cmd[@]}" 2>/dev/tty 3>&1 1>&3)
     local exit_code=$?
 
     echo "$result"
@@ -120,7 +124,7 @@ ui_input() {
     local default="${2:-}"
 
     local result
-    result=$(dialog --title "输入" --inputbox "$prompt" 10 60 "$default" 2>/dev/tty)
+    result=$(dialog --stdout --title "输入" --inputbox "$prompt" 10 60 "$default" 2>/dev/tty)
     echo "$result"
 }
 
@@ -162,14 +166,14 @@ ui_select_file() {
     local start_dir="${1:-.}"
     local title="${2:-选择文件}"
 
-    dialog --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
+    dialog --stdout --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
 }
 
 ui_select_dir() {
     local start_dir="${1:-.}"
     local title="${2:-选择目录}"
 
-    dialog --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
+    dialog --stdout --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
 }
 
 ui_pause() {
