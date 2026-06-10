@@ -40,16 +40,16 @@ _ui_dialog_pick() {
         cmd=(dialog --stdout --title "$title" --ascii-lines --checklist "$prompt" "$height" "$width" "$menu_height")
     fi
 
-    # 写入条目
+    # 写入条目 (menu 模式: key label 交替)
     local i=0
     while [ $i -lt ${#items[@]} ]; do
-        cmd+=("${items[$i]}" "${items[$((i+1))]}" off)
+        cmd+=("${items[$i]}" "${items[$((i+1))]}")
         i=$((i + 2))
     done
 
-    # 添加返回项
+    # 添加返回项 (menu 模式不需要 off)
     if [[ -n "$extra_key" && -n "$extra_label" ]]; then
-        cmd+=("$extra_key" "$extra_label" off)
+        cmd+=("$extra_key" "$extra_label")
     fi
 
     # dialog 行为:
