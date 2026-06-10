@@ -52,14 +52,14 @@ _ui_dialog_pick() {
         cmd+=("$extra_key" "$extra_label")
     fi
 
-    # dialog 行为:
+    # dialog 行为 (加了 --stdout):
     #   UI(界面) 输出到 stderr (fd 2)
-    #   选择结果到 stdout (fd 1) —— 加了 --stdout 后
+    #   选择结果到 stdout (fd 1)
     #
-    # 需求: UI 在终端显示, 选择结果由 $() 捕获
-    # 技巧: fd3->stdout(供 $() 捕获), fd2->tty(UI显示)
+    # 用 $() 捕获 stdout = 选择结果
+    # stderr 重定向到 /dev/tty = UI 显示在终端
     local result
-    result=$("${cmd[@]}" 2>/dev/tty 3>&1 1>&3)
+    result=$("${cmd[@]}" 2>/dev/tty)
     local exit_code=$?
 
     echo "$result"
@@ -101,7 +101,7 @@ ui_msg() {
     local message="$1"
     local title="${2:-提示}"
 
-    dialog --title "$title" --msgbox "$message" 10 60 --ascii-lines
+    dialog --ascii-lines --title "$title" --msgbox "$message" 10 60 2>/dev/tty
 }
 
 ui_error() {
@@ -132,7 +132,7 @@ ui_confirm() {
     local message="$1"
     local title="${2:-确认}"
 
-    dialog --title "$title" --yesno "$message" 10 60 --ascii-lines
+    dialog --ascii-lines --title "$title" --yesno "$message" 10 60 2>/dev/tty
 }
 
 ui_yesno() {
@@ -148,7 +148,7 @@ ui_textbox() {
         return 1
     fi
 
-    dialog --title "$title" --textbox "$file" 20 76 --ascii-lines
+    dialog --ascii-lines --title "$title" --textbox "$file" 20 76 2>/dev/tty
 }
 
 ui_text() {
@@ -158,7 +158,7 @@ ui_text() {
     local tmp_file
     tmp_file=$(mktemp)
     echo "$content" > "$tmp_file"
-    dialog --title "$title" --textbox "$tmp_file" 20 76 --ascii-lines
+    dialog --ascii-lines --title "$title" --textbox "$tmp_file" 20 76 2>/dev/tty
     rm -f "$tmp_file"
 }
 
@@ -166,14 +166,14 @@ ui_select_file() {
     local start_dir="${1:-.}"
     local title="${2:-选择文件}"
 
-    dialog --stdout --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
+    dialog --stdout --ascii-lines --title "$title" --fselect "$start_dir/" 16 76 2>/dev/tty
 }
 
 ui_select_dir() {
     local start_dir="${1:-.}"
     local title="${2:-选择目录}"
 
-    dialog --stdout --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>/dev/tty
+    dialog --stdout --ascii-lines --title "$title" --dselect "$start_dir/" 16 76 2>/dev/tty
 }
 
 ui_pause() {
@@ -210,7 +210,7 @@ ui_loading() {
     local pid="$2"
 
     if [[ -n "$pid" ]]; then
-        ui_spinner "$pid" "$message" | dialog --gauge "$message" 6 50 --ascii-lines
+        ui_spinner "$pid" "$message" | dialog --ascii-lines --gauge "$message" 6 50 2>/dev/tty
     else
         echo "$message"
     fi
@@ -224,7 +224,7 @@ ui_table() {
     local tmp_file
     tmp_file=$(mktemp)
     printf "%s\n" "${data[@]}" > "$tmp_file"
-    dialog --title "$title" --textbox "$tmp_file" 20 76 --ascii-lines
+    dialog --ascii-lines --title "$title" --textbox "$tmp_file" 20 76 2>/dev/tty
     rm -f "$tmp_file"
 }
 

@@ -101,11 +101,11 @@ project_menu() {
 
             local status_text
             if [[ "${_installed[$key]}" == "yes" ]]; then
-                status_text="✅ 已安装"
+                status_text="[已安装]"
             else
-                status_text="⚪ 未安装"
+                status_text="[未安装]"
             fi
-            items+=("$key" "$display  $status_text")
+            items+=("$key" "$display $status_text")
         done
 
         local selected
@@ -121,6 +121,8 @@ project_menu() {
             if [[ "$type" == "tool" ]]; then
                 ui_clear
                 bash "$(project_manage_script "$selected")"
+                ui_clear
+                ui_pause "按 Enter 返回菜单"
             else
                 ui_msg "$display 安装目录: /root/cs/$selected" "提示"
             fi
@@ -144,8 +146,11 @@ project_do_install() {
             if [[ -f "$script" ]]; then
                 ui_clear
                 bash "$script"
+                ui_clear
+                ui_pause "按 Enter 返回菜单"
             else
                 ui_error "$name 暂未提供安装脚本"
+                ui_pause "按 Enter 返回菜单"
             fi
             ;;
         static)
@@ -163,6 +168,7 @@ project_do_install() {
             else
                 ui_error "$name 安装失败"
             fi
+            ui_pause "按 Enter 返回菜单"
             ;;
     esac
 }

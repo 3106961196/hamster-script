@@ -551,7 +551,7 @@ _pick_qq() {
         return 1
     fi
 
-    _PICKED_QQ=$(ui_select "$title" "选择: " "false" "${items[@]}")
+    _PICKED_QQ=$(ui_select "$title" "选择: " "${items[@]}")
 }
 
 # 修改 QQ 配置
