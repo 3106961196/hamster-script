@@ -1,12 +1,16 @@
 #!/bin/bash
 
-UI_TITLE="🐹 Hamster Script"
+UI_TITLE="Hamster Script"
 
 ui_init() {
     if ! command -v dialog &>/dev/null; then
         echo "错误: dialog 未安装" >&2
         return 1
     fi
+
+    # 确保 dialog 使用 UTF-8
+    export LC_ALL="${LC_ALL:-C.UTF-8}" 2>/dev/null
+    export LANG="${LANG:-C.UTF-8}" 2>/dev/null
 }
 
 # ─── 核心菜单函数 ─────────────────────────────────────────
@@ -28,8 +32,15 @@ _ui_dialog_pick() {
     shift 5
     local items=("$@")
 
-    local dialog_args=()
-    dialog_args+=(--title "$title" --menu "$prompt" 20 76 15)
+    local tmp_file
+    tmp_file=$(mktemp)
+
+    local dialog_args=(
+        --title "$title"
+        --menu "$prompt"
+        20 76 15
+        --ascii-lines
+    )
 
     if [[ "$mode" == "checklist" ]]; then
         dialog_args[2]="--checklist"
@@ -47,22 +58,18 @@ _ui_dialog_pick() {
         dialog_args+=("$extra_key" "$extra_label" off)
     fi
 
-    local tmp_file
-    tmp_file=$(mktemp)
-
     local result
-    result=$(dialog --stdout "${dialog_args[@]}" 2>"$tmp_file")
+    result=$(dialog --stdout "${dialog_args[@]}" 2>"$tmp_file" 3>&1 1>&2 2>&3)
     local exit_code=$?
-
-    # checklist 模式：读取所有选中项
-    if [[ "$mode" == "checklist" ]]; then
-        cat "$tmp_file" 2>/dev/null
-        rm -f "$tmp_file"
-        return $exit_code
-    fi
+    exec 3>&- 2>/dev/null
 
     # menu 模式：直接返回选中 key
-    echo "$result"
+    if [[ "$mode" != "checklist" ]]; then
+        echo "$result"
+    else
+        # checklist 模式：从 tmp_file 读取
+        cat "$tmp_file" 2>/dev/null
+    fi
     rm -f "$tmp_file"
     return $exit_code
 }
@@ -103,12 +110,12 @@ ui_msg() {
     local message="$1"
     local title="${2:-提示}"
 
-    dialog --title "$title" --msgbox "$message" 10 60
+    dialog --title "$title" --msgbox "$message" 10 60 --ascii-lines
 }
 
 ui_error() {
     local message="$1"
-    echo -e "\033[31m✗ $message\033[0m" >&2
+    echo -e "\033[31m* $message\033[0m" >&2
 }
 
 ui_info() {
@@ -118,7 +125,7 @@ ui_info() {
 
 ui_success() {
     local message="$1"
-    echo -e "\033[32m✓ $message\033[0m" >&2
+    echo -e "\033[32m+ $message\033[0m" >&2
 }
 
 ui_input() {
@@ -134,7 +141,7 @@ ui_confirm() {
     local message="$1"
     local title="${2:-确认}"
 
-    dialog --title "$title" --yesno "$message" 10 60
+    dialog --title "$title" --yesno "$message" 10 60 --ascii-lines
 }
 
 ui_yesno() {
@@ -150,7 +157,7 @@ ui_textbox() {
         return 1
     fi
 
-    dialog --title "$title" --textbox "$file" 20 76
+    dialog --title "$title" --textbox "$file" 20 76 --ascii-lines
 }
 
 ui_text() {
@@ -160,7 +167,7 @@ ui_text() {
     local tmp_file
     tmp_file=$(mktemp)
     echo "$content" > "$tmp_file"
-    dialog --title "$title" --textbox "$tmp_file" 20 76
+    dialog --title "$title" --textbox "$tmp_file" 20 76 --ascii-lines
     rm -f "$tmp_file"
 }
 
@@ -168,14 +175,14 @@ ui_select_file() {
     local start_dir="${1:-.}"
     local title="${2:-选择文件}"
 
-    dialog --title "$title" --fselect "$start_dir/" 16 76 2>&1 >/dev/tty
+    dialog --title "$title" --fselect "$start_dir/" 16 76 --ascii-lines 2>&1 >/dev/tty
 }
 
 ui_select_dir() {
     local start_dir="${1:-.}"
     local title="${2:-选择目录}"
 
-    dialog --title "$title" --dselect "$start_dir/" 16 76 2>&1 >/dev/tty
+    dialog --title "$title" --dselect "$start_dir/" 16 76 --ascii-lines 2>&1 >/dev/tty
 }
 
 ui_pause() {
@@ -212,7 +219,7 @@ ui_loading() {
     local pid="$2"
 
     if [[ -n "$pid" ]]; then
-        ui_spinner "$pid" "$message" | dialog --gauge "$message" 6 50
+        ui_spinner "$pid" "$message" | dialog --gauge "$message" 6 50 --ascii-lines
     else
         echo "$message"
     fi
@@ -226,7 +233,7 @@ ui_table() {
     local tmp_file
     tmp_file=$(mktemp)
     printf "%s\n" "${data[@]}" > "$tmp_file"
-    dialog --title "$title" --textbox "$tmp_file" 20 76
+    dialog --title "$title" --textbox "$tmp_file" 20 76 --ascii-lines
     rm -f "$tmp_file"
 }
 
