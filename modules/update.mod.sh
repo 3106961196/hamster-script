@@ -58,9 +58,9 @@ update_do() {
 
     cd "$PROJECT_ROOT"
 
-    # 保存更新前的变更内容
+    # 在更新前保存变更内容（带颜色）
     local changes diff_summary
-    changes=$(git diff --stat HEAD origin/main 2>/dev/null)
+    changes=$(git diff --stat --color=always HEAD origin/main 2>/dev/null)
     diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
 
     ui_info "正在更新脚本..."
@@ -70,9 +70,9 @@ update_do() {
 
         echo ""
         echo -e "${COLOR_PURPLE}========== 代码变更统计 ==========${COLOR_RESET}"
-        echo "${changes}"
+        echo -e "${changes}"
         echo -e "${COLOR_PURPLE}==================================${COLOR_RESET}"
-        echo -e "变更概览: ${COLOR_YELLOW}${diff_summary}${COLOR_RESET} 行"
+        echo -e "变更概览: ${COLOR_GREEN}${diff_summary}${COLOR_RESET} 行"
 
         echo ""
         for i in 3 2 1; do
