@@ -27,15 +27,41 @@ check_dependencies() {
     [ -f "/cs/config/tmux/window_b.sh" ] || handle_error "window_b.sh 不存在"
 }
 
+TPM_DIR="/cs/config/tmux/plugins/tpm"
+
+# 安装/更新 TPM
+setup_tpm() {
+    if [ ! -d "$TPM_DIR" ]; then
+        echo "正在安装 TPM..."
+        mkdir -p "$(dirname "$TPM_DIR")"
+        git clone --depth 1 https://github.com/tmux-plugins/tpm "$TPM_DIR" 2>/dev/null || {
+            echo "警告: TPM 克隆失败，插件功能将不可用"
+            return 1
+        }
+    fi
+
+    # 检查插件是否已安装（如果 plugins 目录为空说明未安装）
+    local plugin_count
+    plugin_count=$(find "$TPM_DIR/../" -mindepth 1 -maxdepth 1 -type d ! -name "tpm" 2>/dev/null | wc -l)
+    if [ "$plugin_count" -eq 0 ]; then
+        echo "正在安装 tmux 插件..."
+        # 先加载配置让 TPM 注册格式变量
+        tmux source-file "$TMUX_CONF" 2>/dev/null
+        # 运行 TPM 安装脚本
+        "$TPM_DIR/bin/install_plugins" 2>/dev/null &
+    fi
+}
+
 # 主函数
 main() {
     check_dependencies
-    
+    setup_tpm
+
     if [ -n "$TMUX" ]; then
         tmux source-file "$TMUX_CONF"
         return
     fi
-    
+
     if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
         if ! tmux list-windows -t "$SESSION_NAME" | grep -q "甲" || ! tmux list-windows -t "$SESSION_NAME" | grep -q "乙"; then
             tmux kill-session -t "$SESSION_NAME"
@@ -46,7 +72,7 @@ main() {
         create_desktop_layout
         tmux source-file "$TMUX_CONF"
     fi
-    
+
     tmux attach-session -t "$SESSION_NAME"
 }
 
