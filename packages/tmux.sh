@@ -47,8 +47,8 @@ setup_tpm() {
         echo "正在安装 tmux 插件..."
         # 先加载配置让 TPM 注册格式变量
         tmux source-file "$TMUX_CONF" 2>/dev/null
-        # 运行 TPM 安装脚本
-        "$TPM_DIR/bin/install_plugins" 2>/dev/null &
+        # 前台运行 TPM 安装脚本，等待完成
+        "$TPM_DIR/bin/install_plugins"
     fi
 }
 

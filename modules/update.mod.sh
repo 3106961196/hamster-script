@@ -68,18 +68,11 @@ update_do() {
     if _update_execute; then
         ui_success "脚本更新成功！"
 
-        # 显示更新内容
-        local content
-        content=$(cat <<CHANGELOG
-
-========== 代码变更统计 ==========
-${changes}
-==================================
-
-变更概览: ${diff_summary} 行
-CHANGELOG
-        )
-        ui_text "$content" "更新内容"
+        echo ""
+        echo -e "${COLOR_PURPLE}========== 代码变更统计 ==========${COLOR_RESET}"
+        echo "${changes}"
+        echo -e "${COLOR_PURPLE}==================================${COLOR_RESET}"
+        echo -e "变更概览: ${COLOR_YELLOW}${diff_summary}${COLOR_RESET} 行"
 
         echo ""
         for i in 3 2 1; do
