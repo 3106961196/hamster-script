@@ -111,15 +111,6 @@ log_section() {
     echo ""
 }
 
-log_progress() {
-    local current="$1"
-    local total="$2"
-    local message="${3:-处理中}"
-    local percent=$((current * 100 / total))
-    printf "\r[%-50s] %d%% %s" "$(printf '#%.0s' $(seq 1 $((percent / 2))))" "$percent" "$message"
-    [[ $current -eq $total ]] && echo ""
-}
-
 init_logging() {
     local log_dir="${CONFIG[log_dir]}"
     if [[ ! -d "$log_dir" ]]; then

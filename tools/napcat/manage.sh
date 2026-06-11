@@ -615,7 +615,7 @@ start_qq_interactive() {
     local selected="$_PICKED_QQ"
     [ -z "$selected" ] && return
 
-    start_qq "$selected" "true"
+    start_qq "$selected"
 }
 
 # ═══════════════════════════════════════════════════════════════
@@ -704,7 +704,7 @@ napcat_manage() {
             4) delete_qq_interactive ;;
             5) reinstall_project ;;
             6) uninstall_project ;;
-            b) break ;;
+            b) exit 0 ;;
         esac
     done
 }

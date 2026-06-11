@@ -15,13 +15,11 @@ INSTALL_DIR="/root/cs/XRK-AGT"
 
 # ─── 状态检测 ────────────────────────────────────────────────
 
-is_installed() {
+_xrk_is_installed() {
     [[ -d "$INSTALL_DIR" && -f "$INSTALL_DIR/package.json" ]]
 }
 
-# ─── 依赖服务（Redis / MongoDB） ────────────────────────────
-
-check_dependencies() {
+_xrk_check_dependencies() {
     # Redis
     if ! command -v redis-cli &>/dev/null || ! redis-cli ping 2>/dev/null | grep -q "PONG"; then
         if command -v redis-server &>/dev/null; then
@@ -66,38 +64,34 @@ check_dependencies() {
     fi
 }
 
-# ─── 启动 ─────────────────────────────────────────────────────
-
-start_service() {
-    if ! is_installed; then
+_xrk_start_service() {
+    if ! _xrk_is_installed; then
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
 
-    check_dependencies
+    _xrk_check_dependencies
 
     cd "$INSTALL_DIR"
     ui_info "正在启动 XRK-AGT..."
     node app.js
 }
 
-start_debug() {
-    if ! is_installed; then
+_xrk_start_debug() {
+    if ! _xrk_is_installed; then
         ui_msg "XRK-AGT 未安装，请先安装" "错误"
         return 1
     fi
 
-    check_dependencies
+    _xrk_check_dependencies
 
     cd "$INSTALL_DIR"
     ui_info "正在以 Debug 模式启动 XRK-AGT..."
     node debug.js
 }
 
-# ─── 重装 ─────────────────────────────────────────────────────
-
-reinstall_project() {
-    if ! is_installed; then
+_xrk_reinstall_project() {
+    if ! _xrk_is_installed; then    
         ui_msg "XRK-AGT 未安装，请先使用安装功能" "错误"
         return 1
     fi
@@ -120,10 +114,8 @@ reinstall_project() {
     ui_success "XRK-AGT 重装完成！请手动启动服务"
 }
 
-# ─── 卸载 ─────────────────────────────────────────────────────
-
-uninstall_project() {
-    if ! is_installed; then
+_xrk_uninstall_project() {
+    if ! _xrk_is_installed; then    
         ui_msg "XRK-AGT 未安装" "提示"
         return 0
     fi
@@ -150,11 +142,11 @@ xrk_manage() {
             "4" "🗑️  卸载 XRK-AGT")
 
         case "$choice" in
-            1) start_service ;;
-            2) start_debug ;;
-            3) reinstall_project ;;
-            4) uninstall_project ;;
-            b) break ;;
+            1) _xrk_start_service ;;
+            2) _xrk_start_debug ;;
+            3) _xrk_reinstall_project ;;
+            4) _xrk_uninstall_project ;;
+            b) exit 0;;
         esac
     done
 }
@@ -163,11 +155,11 @@ xrk_manage() {
 
 if [ "$1" == "--auto" ]; then
     case "$2" in
-        start)        start_service ;;
-        debug)        start_debug ;;
-        reinstall)    reinstall_project ;;
-        is-installed) is_installed && echo "yes" || echo "no" ;;
-        uninstall)    uninstall_project ;;
+        start)        _xrk_start_service ;;
+        debug)        _xrk_start_debug ;;
+        reinstall)    _xrk_reinstall_project ;;
+        is-installed) _xrk_is_installed && echo "yes" || echo "no" ;;
+        uninstall)    _xrk_uninstall_project ;; 
         *)
             echo "用法: manage.sh --auto {start|debug|reinstall|is-installed|uninstall}"
             exit 1

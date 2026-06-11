@@ -37,15 +37,7 @@ sys_get_info() {
     uptime
 }
 
-sys_get_uptime() {
-    local uptime_str
-    uptime_str=$(cat /proc/uptime | cut -d' ' -f1)
-    local uptime_int=${uptime_str%.*}
-    local days=$((uptime_int / 86400))
-    local hours=$(( (uptime_int % 86400) / 3600 ))
-    local minutes=$(( (uptime_int % 3600) / 60 ))
-    echo "${days}天 ${hours}小时 ${minutes}分钟"
-}
+
 
 sys_get_cpu_usage() {
     local cpu_usage
@@ -69,10 +61,6 @@ sys_get_memory_usage() {
 sys_get_disk_usage() {
     local path="${1:-/}"
     df -h "$path" | tail -1 | awk '{print $3 " / " $2 " (" $5 " 已用)"}'
-}
-
-sys_get_load_avg() {
-    cat /proc/loadavg | awk '{print $1 ", " $2 ", " $3}'
 }
 
 sys_is_systemd() {
@@ -129,34 +117,6 @@ sys_service_is_running() {
         systemctl is-active --quiet "$service"
     else
         service "$service" status &>/dev/null
-    fi
-}
-
-sys_reboot() {
-    local delay="${1:-0}"
-    if [[ $delay -gt 0 ]]; then
-        log_info "系统将在 ${delay} 秒后重启..."
-        sleep "$delay"
-    fi
-    
-    if command_exists systemctl; then
-        systemctl reboot
-    else
-        reboot
-    fi
-}
-
-sys_shutdown() {
-    local delay="${1:-0}"
-    if [[ $delay -gt 0 ]]; then
-        log_info "系统将在 ${delay} 秒后关机..."
-        sleep "$delay"
-    fi
-    
-    if command_exists systemctl; then
-        systemctl poweroff
-    else
-        poweroff
     fi
 }
 
@@ -447,7 +407,6 @@ sys_parse_process_list() {
     local ps_output="$1"
     local max_count="${2:-20}"
     
-    local items=()
     local count=0
     
     while IFS= read -r line; do
@@ -459,14 +418,12 @@ sys_parse_process_list() {
             comm=$(echo "$line" | awk '{for(i=11;i<=NF;i++) printf $i " "; print ""}' | xargs)
             
             if [[ -n "$pid" ]]; then
-                items+=("$pid" "CPU:${cpu}% MEM:${mem}% - ${comm:0:40}")
+                echo "$pid CPU:${cpu}% MEM:${mem}% - ${comm:0:40}"
                 ((count++))
                 if [[ $count -ge $max_count ]]; then
                     break
                 fi
             fi
         fi
-    done <<< "$ps_output"
-    
-    printf '%s\n' "${items[@]}"
+    done <<< "$ps_output"    
 }

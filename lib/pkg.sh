@@ -40,10 +40,10 @@ pkg_update() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt update ;;
-        yum) yum makecache ;;
-        pacman) pacman -Sy ;;
-        apk) apk update ;;
+        apt) apt update 2>&1 || return 1 ;;
+        yum) yum makecache || return 1 ;;
+        pacman) pacman -Sy || return 1 ;;
+        apk) apk update || return 1 ;;
         *) return 1 ;;
     esac
 }
@@ -52,10 +52,10 @@ pkg_upgrade() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confold" ;;
-        yum) yum upgrade -y ;;
-        pacman) pacman -Syu --noconfirm ;;
-        apk) apk upgrade ;;
+        apt) DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confold" 2>&1 || return 1 ;;
+        yum) yum upgrade -y || return 1 ;;
+        pacman) pacman -Syu --noconfirm || return 1 ;;
+        apk) apk upgrade || return 1 ;; 
         *) return 1 ;;
     esac
 }
@@ -150,10 +150,10 @@ pkg_remove() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt remove -y "$package" ;;
-        yum) yum remove -y "$package" ;;
-        pacman) pacman -R --noconfirm "$package" ;;
-        apk) apk del "$package" ;;
+        apt) apt remove -y "$package" 2>&1 || return 1 ;;
+        yum) yum remove -y "$package" || return 1 ;;
+        pacman) pacman -R --noconfirm "$package" || return 1 ;;
+        apk) apk del "$package" || return 1 ;;
         *) return 1 ;;
     esac
 }
@@ -302,10 +302,10 @@ pkg_autoremove() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt autoremove -y ;;
-        yum) yum autoremove -y ;;
-        pacman) pacman -Rns --noconfirm "$(pacman -Qdtq)" 2>/dev/null || true ;;
-        apk) apk cache clean ;;
+        apt) apt autoremove -y 2>&1 || return 1 ;;
+        yum) yum autoremove -y || return 1 ;;
+        pacman) pacman -Rns --noconfirm "$(pacman -Qdtq)" 2>/dev/null || return 1 ;;
+        apk) apk cache clean 2>&1 || return 1 ;;
         *) return 1 ;;
     esac
 }
@@ -314,10 +314,10 @@ pkg_clean() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) apt autoclean -y && apt clean ;;
-        yum) yum clean all ;;
-        pacman) pacman -Sc --noconfirm ;;
-        apk) apk cache clean ;;
+        apt) apt autoclean -y 2>&1 || return 1 && apt clean 2>&1 || return 1 ;;
+        yum) yum clean all || return 1 ;;
+        pacman) pacman -Sc --noconfirm || return 1 ;;
+        apk) apk cache clean 2>&1 || return 1 ;;    
         *) return 1 ;;
     esac
 }
@@ -362,10 +362,10 @@ pkg_upgrade_all() {
     local pkg_manager
     pkg_manager=$(pkg_get_manager)
     case "$pkg_manager" in
-        apt) DEBIAN_FRONTEND=noninteractive apt full-upgrade -y -o Dpkg::Options::="--force-confold" ;;
-        yum) yum upgrade -y ;;
-        pacman) pacman -Syu --noconfirm ;;
-        apk) apk upgrade ;;
+        apt) DEBIAN_FRONTEND=noninteractive apt full-upgrade -y -o Dpkg::Options::="--force-confold" 2>&1 || return 1 ;;
+        yum) yum upgrade -y || return 1 ;;
+        pacman) pacman -Syu --noconfirm || return 1 ;;
+        apk) apk upgrade || return 1 ;;
         *) return 1 ;;
     esac
 }

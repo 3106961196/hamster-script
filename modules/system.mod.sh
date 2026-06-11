@@ -381,7 +381,7 @@ system_time_show() {
     local time_info
     time_info=$({
         echo "当前时间: $(date '+%Y-%m-%d %H:%M:%S')"
-        echo "时区: $(timedatectl show --property=Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo '未知')"
+        echo "时区: $(timedatectl show --property=Timezone --value 2>/dev/null || { cat /etc/timezone 2>/dev/null;} || echo '未知'; )" 
         echo "运行时间: $(uptime -p 2>/dev/null || uptime)"
     })
     
@@ -520,18 +520,18 @@ system_process_menu() {
 }
 
 system_process_list() {
-    local items
-    items=$(sys_parse_process_list "$(ps aux --sort=-%cpu | head -31)" 30)
+    local items_data
+    items_data=$(sys_parse_process_list "$(ps aux --sort=-%cpu | head -31)" 30)
     
-    if [[ -z "$items" ]]; then
+    if [[ -z "$items_data" ]]; then
         ui_msg "无法获取进程列表" "错误"
         return
     fi
     
     local items_array=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && items_array+=("$line")
-    done <<< "$items"
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] && items_array+=("$key" "$value")
+    done <<< "$items_data"
     
     local selected
     selected=$(ui_select "📊 进程列表 (TOP 30 CPU)" "选择进程:" "${items_array[@]}")
@@ -547,18 +547,18 @@ system_process_search() {
     
     [[ -z "$keyword" ]] && return
     
-    local items
-    items=$(sys_parse_process_list "$(ps aux | grep -i "$keyword" | grep -v grep | head -21)" 20)
+    local items_data
+    items_data=$(sys_parse_process_list "$(ps aux | grep -i "$keyword" | grep -v grep | head -21)" 20)
     
-    if [[ -z "$items" ]]; then
+    if [[ -z "$items_data" ]]; then
         ui_msg "未找到匹配的进程" "提示"
         return
     fi
     
     local items_array=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && items_array+=("$line")
-    done <<< "$items"
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] && items_array+=("$key" "$value")
+    done <<< "$items_data"  
     
     local selected
     selected=$(ui_select "📊 搜索结果" "选择进程:" "${items_array[@]}")

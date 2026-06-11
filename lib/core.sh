@@ -33,36 +33,105 @@ declare -A CONFIG=(
 )
 
 parse_yaml() {
+    shopt -s extglob
     local file="$1"
     local prefix="$2"
     
     if [[ ! -f "$file" ]]; then
         return
     fi
+
+    local current_section=""
+    local current_subsection=""
+    local current_list_item=""
+    local prev_indent=0
     
     while IFS= read -r line || [[ -n "$line" ]]; do
-        line=$(echo "$line" | sed 's/[[:space:]]*$//')
+        # Trim trailing whitespace
+        line="${line%%+([[:space:]])}"
         
+        # Skip comments and empty lines
         [[ "$line" =~ ^[[:space:]]*# ]] && continue
-        [[ "$line" =~ ^[[:space:]]*$ ]] && continue
+        [[ -z "${line// /}" ]] && continue
         
-        if [[ "$line" =~ ^[[:space:]]*([a-zA-Z_][a-zA-Z0-9_]*)[[:space:]]*:[[:space:]]*(.*)$ ]]; then
+        # Top-level section: "section:"
+        if [[ "$line" =~ ^([a-zA-Z_][a-zA-Z0-9_.-]*)[[:space:]]*:[[:space:]]*$ ]]; then
+            local section="${BASH_REMATCH[1]}"
+            current_section="${prefix:+${prefix}_}${section}"
+            current_subsection=""
+            current_list_item=""
+            continue
+        fi
+        
+        # Subsection with indentation: "  subsection:"
+        if [[ "$line" =~ ^([[:space:]]+)([a-zA-Z_][a-zA-Z0-9_.-]*)[[:space:]]*:[[:space:]]*$ ]]; then
+            local subsection="${BASH_REMATCH[2]}"
+            if [[ -n "$current_section" ]]; then
+                current_subsection="${current_section}_${subsection}"
+            else
+                current_subsection="${prefix:+${prefix}_}${subsection}"
+            fi
+            current_list_item=""
+            continue
+        fi
+        
+        # List item with name: "  - name: value"
+        if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+name:[[:space:]]*(.+)$ ]]; then
+            local item_name="${BASH_REMATCH[1]}"
+            item_name="${item_name#\"}"
+            item_name="${item_name%\"}"
+            item_name="${item_name#\'}"
+            item_name="${item_name%\'}"
+            current_list_item="$item_name"
+            if [[ -n "$current_section" ]]; then
+                CONFIG["${current_section}_${current_list_item}"]="${current_list_item}"
+            fi
+            continue
+        fi
+        
+        # Simple list item: "  - value"
+        if [[ "$line" =~ ^[[:space:]]+-[[:space:]]+(.+)$ ]]; then
+            local item_val="${BASH_REMATCH[1]}"
+            item_val="${item_val#\"}"
+            item_val="${item_val%\"}"
+            item_val="${item_val#\'}"
+            item_val="${item_val%\'}"
+            if [[ -n "$current_section" ]]; then
+                if [[ -n "$current_list_item" ]]; then
+                    CONFIG["${current_section}_${current_list_item}"]="$item_val"
+                else
+                    CONFIG["${current_section}_list"]+="${item_val} "
+                fi
+            fi
+            continue
+        fi
+        
+        # Key-value pair: "  key: value"
+        if [[ "$line" =~ ^[[:space:]]+([a-zA-Z_][a-zA-Z0-9_.-]*)[[:space:]]*:[[:space:]]*(.+)$ ]]; then
             local key="${BASH_REMATCH[1]}"
             local value="${BASH_REMATCH[2]}"
             
+            # Remove quotes
             value="${value#\"}"
             value="${value%\"}"
             value="${value#\'}"
             value="${value%\'}"
-            value="${value%[[:space:]]}"
+            # Trim trailing whitespace
+            value="${value%%+([[:space:]])}"
             
-            if [[ -n "$prefix" ]]; then
+            # Build full key
+            if [[ -n "$current_subsection" ]]; then
+                key="${current_subsection}_${key}"
+            elif [[ -n "$current_section" ]]; then
+                key="${current_section}_${key}"
+            elif [[ -n "$prefix" ]]; then
                 key="${prefix}_${key}"
             fi
             
             if [[ -n "$key" && -n "$value" ]]; then
-                CONFIG[$key]="$value"
+                CONFIG["$key"]="$value"
             fi
+            continue
         fi
     done < "$file"
 }

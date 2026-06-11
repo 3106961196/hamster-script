@@ -122,7 +122,6 @@ project_menu() {
                 ui_clear
                 bash "$(project_manage_script "$selected")"
                 ui_clear
-                ui_pause "按 Enter 返回菜单"
             else
                 ui_msg "$display 安装目录: /root/cs/$selected" "提示"
             fi

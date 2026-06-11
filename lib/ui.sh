@@ -137,18 +137,6 @@ ui_yesno() {
     ui_confirm "$@"
 }
 
-ui_textbox() {
-    local file="$1"
-    local title="${2:-内容}"
-
-    if [[ ! -f "$file" ]]; then
-        ui_error "文件不存在: $file"
-        return 1
-    fi
-
-    dialog --title "$title" --textbox "$file" 20 76 2>/dev/tty
-}
-
 ui_text() {
     local content="$1"
     local title="${2:-内容}"
@@ -165,13 +153,6 @@ ui_select_file() {
     local title="${2:-选择文件}"
 
     dialog --stdout --title "$title" --fselect "$start_dir/" 16 76 2>/dev/tty
-}
-
-ui_select_dir() {
-    local start_dir="${1:-.}"
-    local title="${2:-选择目录}"
-
-    dialog --stdout --title "$title" --dselect "$start_dir/" 16 76 2>/dev/tty
 }
 
 ui_pause() {
@@ -201,38 +182,6 @@ ui_spinner() {
     echo "完成"
     echo "XXX"
     echo "100"
-}
-
-ui_loading() {
-    local message="${1:-加载中...}"
-    local pid="$2"
-
-    if [[ -n "$pid" ]]; then
-        ui_spinner "$pid" "$message" | dialog --gauge "$message" 6 50 2>/dev/tty
-    else
-        echo "$message"
-    fi
-}
-
-ui_table() {
-    local title="$1"
-    shift
-    local data=("$@")
-
-    local tmp_file
-    tmp_file=$(mktemp)
-    printf "%s\n" "${data[@]}" > "$tmp_file"
-    dialog --ascii-lines --title "$title" --textbox "$tmp_file" 20 76 2>/dev/tty
-    rm -f "$tmp_file"
-}
-
-ui_search() {
-    local title="$1"
-    local prompt="${2:-搜索:}"
-    shift 2
-    local items=("$@")
-
-    _ui_dialog_pick "$title (输入关键词搜索)" "$prompt" '' '' "menu" "${items[@]}"
 }
 
 ui_action() {

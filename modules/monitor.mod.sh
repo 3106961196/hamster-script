@@ -24,13 +24,13 @@ monitor_overview() {
     
     local content
     content=$({
-        echo "🖥️  系统: $(cat /etc/os-release 2>/dev/null | grep PRETTY_NAME | cut -d'"' -f2 || uname -a)"
+        echo "🖥️  系统: $(grep PRETTY_NAME  /etc/os-release 2>/dev/null | cut -d'"' -f2 || uname -a)"
         echo "📅  时间: $(date '+%Y-%m-%d %H:%M:%S')"
         echo "⏱️   运行: $(uptime -p 2>/dev/null || uptime)"
         echo ""
         echo "💻  CPU: $(sys_get_cpu_usage 2>/dev/null || echo 'N/A')"
         echo "    核心: $(nproc 2>/dev/null || echo 'N/A')"
-        echo "    负载: $(cat /proc/loadavg 2>/dev/null | awk '{print $1, $2, $3}' || echo 'N/A')"
+        echo "    负载: $(awk '{print $1, $2, $3}' < /proc/loadavg 2>/dev/null || echo 'N/A')"
         echo ""
         echo "🧠  内存: $(free -h 2>/dev/null | grep Mem | awk '{print $3 "/" $2}' || echo 'N/A')"
         echo "    Swap: $(free -h 2>/dev/null | grep Swap | awk '{print $3 "/" $2}' || echo 'N/A')"
@@ -74,7 +74,7 @@ monitor_cpu() {
         lscpu 2>/dev/null | grep -E "^(Model name|CPU\(s\)|CPU MHz|CPU cores)" || echo "无法获取"
         echo ""
         echo "系统负载:"
-        cat /proc/loadavg 2>/dev/null || echo "无法获取"
+        awk '{print $1, $2, $3}' < /proc/loadavg 2>/dev/null || echo "无法获取"
     })
     
     ui_text "$content" "💻 CPU 监控"
@@ -109,18 +109,18 @@ monitor_disk() {
 }
 
 monitor_processes() {
-    local items
-    items=$(sys_parse_process_list "$(ps aux --sort=-%cpu | head -21)" 20)
+    local items_data
+    items_data=$(sys_parse_process_list "$(ps aux --sort=-%cpu | head -21)" 20)
     
-    if [[ -z "$items" ]]; then
+    if [[ -z "$items_data" ]]; then
         ui_msg "无法获取进程列表" "错误"
         return
     fi
     
     local items_array=()
-    while IFS= read -r line; do
-        [[ -n "$line" ]] && items_array+=("$line")
-    done <<< "$items"
+    while IFS=$'\t' read -r key value; do
+        [[ -n "$key" ]] && items_array+=("$key" "$value")
+    done <<< "$items_data"
     
     local selected
     selected=$(ui_select "📊 进程列表 (TOP 20)" "选择进程:" "${items_array[@]}")
