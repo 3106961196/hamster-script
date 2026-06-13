@@ -109,8 +109,9 @@ _xrk_reinstall_project() {
 
     ui_info "正在安装依赖..."
     cd "$INSTALL_DIR"
-    # 跳过 puppeteer 浏览器下载（服务器可能无法访问）
-    PUPPETEER_SKIP_DOWNLOAD=1 pnpm i || PUPPETEER_SKIP_DOWNLOAD=1 npm install
+    # 跳过 puppeteer 浏览器下载 + 忽略 postinstall 脚本（避免 puppeteer 尝试下载 Chrome）
+    export PUPPETEER_SKIP_DOWNLOAD=true
+    pnpm i --ignore-scripts || npm install --ignore-scripts
 
     ui_success "XRK-AGT 重装完成！请手动启动服务"
 }
