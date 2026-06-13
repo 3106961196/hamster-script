@@ -109,7 +109,8 @@ _xrk_reinstall_project() {
 
     ui_info "正在安装依赖..."
     cd "$INSTALL_DIR"
-    pnpm i || npm install
+    # 跳过 puppeteer 浏览器下载（服务器可能无法访问）
+    PUPPETEER_SKIP_DOWNLOAD=1 pnpm i || PUPPETEER_SKIP_DOWNLOAD=1 npm install
 
     ui_success "XRK-AGT 重装完成！请手动启动服务"
 }
@@ -145,7 +146,7 @@ xrk_manage() {
             1) _xrk_start_service ;;
             2) _xrk_start_debug ;;
             3) _xrk_reinstall_project ;;
-            4) _xrk_uninstall_project ;;
+            4) _xrk_uninstall_project && exit 0 ;;
             b) exit 0;;
         esac
     done

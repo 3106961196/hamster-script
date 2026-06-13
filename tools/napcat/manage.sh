@@ -703,7 +703,7 @@ napcat_manage() {
             3) modify_qq_interactive ;;
             4) delete_qq_interactive ;;
             5) reinstall_project ;;
-            6) uninstall_project ;;
+            6) uninstall_project && exit 0 ;;
             b) exit 0 ;;
         esac
     done
