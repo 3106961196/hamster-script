@@ -13,6 +13,44 @@ load_lib "pkg" 2>/dev/null || source "$PROJECT_ROOT/lib/pkg.sh" 2>/dev/null
 REPO_URL="https://github.com/sunflowermm/XRK-AGT"
 INSTALL_DIR="/root/cs/XRK-AGT"
 
+# ─── Chromium 检测与安装 ─────────────────────────────────────
+
+_xrk_check_chromium() {
+    local chromium_path=""
+
+    # 查找系统 chromium
+    if command -v chromium-browser &>/dev/null; then
+        chromium_path=$(command -v chromium-browser)
+    elif command -v chromium &>/dev/null; then
+        chromium_path=$(command -v chromium)
+    elif command -v google-chrome &>/dev/null; then
+        chromium_path=$(command -v google-chrome)
+    fi
+
+    if [ -n "$chromium_path" ]; then
+        export PUPPETEER_EXECUTABLE_PATH="$chromium_path"
+        return 0
+    fi
+
+    # 未找到，尝试安装
+    ui_info "Chromium 未安装，正在安装..."
+    if command -v apt &>/dev/null; then
+        apt install -y chromium-browser 2>&1 || apt install -y chromium 2>&1 || true
+    elif command -v yum &>/dev/null; then
+        yum install -y chromium 2>&1 || true
+    fi
+
+    # 重新查找
+    if command -v chromium-browser &>/dev/null; then
+        export PUPPETEER_EXECUTABLE_PATH=$(command -v chromium-browser)
+    elif command -v chromium &>/dev/null; then
+        export PUPPETEER_EXECUTABLE_PATH=$(command -v chromium)
+    else
+        ui_warn "Chromium 安装失败，XRK-AGT 渲染功能将不可用"
+        return 1
+    fi
+}
+
 # ─── 状态检测 ────────────────────────────────────────────────
 
 _xrk_is_installed() {
@@ -62,6 +100,9 @@ _xrk_check_dependencies() {
             fi
         fi
     fi
+
+    # Chromium
+    _xrk_check_chromium
 }
 
 _xrk_start_service() {
@@ -109,9 +150,9 @@ _xrk_reinstall_project() {
 
     ui_info "正在安装依赖..."
     cd "$INSTALL_DIR"
-    # 跳过 puppeteer 浏览器下载 + 忽略 postinstall 脚本（避免 puppeteer 尝试下载 Chrome）
+    # 使用系统 Chromium，跳过 puppeteer 自带的 Chrome 下载
     export PUPPETEER_SKIP_DOWNLOAD=true
-    pnpm i --ignore-scripts || npm install --ignore-scripts
+    pnpm i 2>&1 || npm install 2>&1
 
     ui_success "XRK-AGT 重装完成！请手动启动服务"
 }
