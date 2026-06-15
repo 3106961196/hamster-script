@@ -1,0 +1,169 @@
+#!/bin/bash
+
+# ─── 项目列表 ───────────────────────────────────────────────
+# 使用 tool.sh 框架统一管理工具项目
+
+PROJECT_DEFS=(
+    "xrk-agt|XRK-AGT|tool"
+    "napcat|NapCat|tool"
+    "TRSS-Yunzai|TRSS-Yunzai|static"
+)
+
+# ─── 辅助函数 ───────────────────────────────────────────────
+
+project_manage_script() {
+    echo "${PROJECT_ROOT}/tools/${1}/manage.sh"
+}
+
+project_install_script() {
+    echo "${PROJECT_ROOT}/tools/${1}/install.sh"
+}
+
+# 使用 tool.sh 的 tool_is_installed 函数
+project_check_status() {
+    local -n _inst="$1"
+    local item key type
+
+    for item in "${PROJECT_DEFS[@]}"; do
+        key="${item%%|*}"
+        type="${item##*|}"
+
+        if [[ "$type" == "tool" ]]; then
+            if tool_is_installed "$key"; then
+                _inst["$key"]="yes"
+            else
+                _inst["$key"]="no"
+            fi
+        else
+            if [[ -d "/root/cs/$key" ]]; then
+                _inst["$key"]="yes"
+            else
+                _inst["$key"]="no"
+            fi
+        fi
+    done
+}
+
+project_display_name() {
+    local key="$1"
+    local item
+    for item in "${PROJECT_DEFS[@]}"; do
+        local k="${item%%|*}"
+        if [[ "$k" == "$key" ]]; then
+            local rest="${item#*|}"
+            echo "${rest%|*}"
+            return
+        fi
+    done
+    echo "$key"
+}
+
+project_type() {
+    local key="$1"
+    local item
+    for item in "${PROJECT_DEFS[@]}"; do
+        local k="${item%%|*}"
+        if [[ "$k" == "$key" ]]; then
+            echo "${item##*|}"
+            return
+        fi
+    done
+    echo ""
+}
+
+# ─── 主菜单 ─────────────────────────────────────────────────
+
+project_menu() {
+    while true; do
+        # 一次性检测所有项目状态
+        local -A _installed=()
+        project_check_status _installed
+
+        # 构建菜单项
+        local items=()
+        local item key type display
+        for item in "${PROJECT_DEFS[@]}"; do
+            key="${item%%|*}"
+            type="${item##*|}"
+            display=$(project_display_name "$key")
+
+            local status_text
+            if [[ "${_installed[$key]}" == "yes" ]]; then
+                status_text="[已安装]"
+            else
+                status_text="[未安装]"
+            fi
+            items+=("$key" "$display $status_text")
+        done
+
+        local selected
+        selected=$(ui_submenu "📁 项目列表" "选择项目:" "${items[@]}")
+        [[ -z "$selected" || "$selected" == "b" ]] && break
+
+        local display type
+        display=$(project_display_name "$selected")
+        type=$(project_type "$selected")
+
+        if [[ "${_installed[$selected]}" == "yes" ]]; then
+            # 已安装 → 工具项目直接进管理界面，static 提示路径
+            if [[ "$type" == "tool" ]]; then
+                ui_clear
+                bash "$(project_manage_script "$selected")"
+                ui_clear
+            else
+                ui_msg "$display 安装目录: /root/cs/$selected" "提示"
+            fi
+        else
+            if ui_confirm "⚠️ $display 尚未安装\n\n是否立即安装？"; then
+                project_do_install "$selected" "$type"
+            fi
+        fi
+    done
+}
+
+# 使用 tool.sh 的 tool_install 函数
+project_do_install() {
+    local name="$1"
+    local type="$2"
+
+    case "$type" in
+        tool)
+            local script
+            script=$(project_install_script "$name")
+            if [[ -f "$script" ]]; then
+                ui_clear
+                bash "$script"
+                ui_clear
+                ui_pause "按 Enter 返回菜单"
+            else
+                # 使用 tool.sh 的标准安装流程
+                ui_info "使用标准安装流程..."
+                if tool_install "$name"; then
+                    ui_success "$name 安装完成"
+                else
+                    ui_error "$name 安装失败"
+                fi
+                ui_pause "按 Enter 返回菜单"
+            fi
+            ;;
+        static)
+            # TRSS-Yunzai：从 Gitee 克隆
+            local target="/root/cs/$name"
+            if [[ -d "$target" ]]; then
+                ui_msg "$name 已存在" "提示"
+                return
+            fi
+            ui_info "正在安装 $name ..."
+            mkdir -p /root/cs
+            if git clone --depth 1 "https://gitee.com/TimeRainStarSky/Yunzai.git" "$target" 2>&1; then
+                ui_success "$name 安装成功"
+                ui_info "安装目录: $target"
+            else
+                ui_error "$name 安装失败"
+            fi
+            ui_pause "按 Enter 返回菜单"
+            ;;
+    esac
+}
+
+

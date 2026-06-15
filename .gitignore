@@ -29,9 +29,6 @@ env/
 config/user.yaml
 config/projects.yaml
 
-# 用户安装的软件目录
-app/
-
 # 项目临时文件
 log/
 .log/
