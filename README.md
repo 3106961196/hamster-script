@@ -14,7 +14,7 @@
 ## 安装
 
 ```bash
-bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/install.sh)
+bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/setup.sh)
 ```
 
 ## 使用方法
@@ -33,29 +33,38 @@ hamster-script/
 ├── bin/                    # 入口脚本
 │   └── cs                 # 主命令入口
 ├── lib/                    # 核心库
-│   ├── core.sh            # 核心加载器、配置管理
+│   ├── core.sh            # 极简核心（路径 + 加载函数）
+│   ├── config.sh          # 配置管理（CONFIG + YAML）
 │   ├── log.sh             # 日志模块
 │   ├── ui.sh              # dialog 封装
-│   ├── pkg.sh             # 包管理
-│   └── sys.sh             # 系统函数
-├── modules/                # 功能模块
-│   ├── menu.mod.sh        # 主菜单
-│   ├── package.mod.sh     # 软件管理
-│   ├── system.mod.sh      # 系统管理
-│   ├── service.mod.sh     # 服务管理
-│   ├── backup.mod.sh      # 备份恢复
-│   ├── monitor.mod.sh     # 系统监控
-│   ├── project.mod.sh     # 项目管理
-│   └── update.mod.sh      # 更新模块
-├── utils/                  # 工具脚本
-│   ├── deps.sh            # 依赖检查
-│   └── download.sh        # 下载工具
+│   ├── pkg.sh             # 包管理 + 镜像源
+│   ├── sys.sh             # 系统信息 + 清理
+│   ├── service.sh         # 服务管理
+│   ├── firewall.sh        # 防火墙管理
+│   ├── net.sh             # 网络 + 下载
+│   └── tool.sh            # 工具通用框架
+├── app/                    # 应用模块
+│   ├── menu.sh            # 主菜单
+│   ├── package.sh         # 软件管理
+│   ├── project.sh         # 项目管理
+│   ├── system.sh          # 系统管理
+│   ├── backup.sh          # 备份恢复
+│   ├── monitor.sh         # 系统监控
+│   ├── settings.sh        # 系统设置
+│   └── update.sh          # 脚本更新
+├── tools/                  # 工具实例
+│   ├── _template/         # 工具模板
+│   ├── napcat/            # NapCat 工具
+│   │   ├── tool.conf      # 工具配置
+│   │   ├── install.sh     # 安装脚本
+│   │   └── manage.sh      # 管理脚本
+│   └── xrk-agt/           # XRK-AGT 工具
+│       ├── tool.conf      # 工具配置
+│       ├── install.sh     # 安装脚本
+│       └── manage.sh      # 管理脚本
 ├── config/                 # 配置文件
-│   ├── main.conf          # 主配置
-│   ├── projects.yaml      # 项目配置
-│   └── tmux/              # tmux 配置
-├── packages/               # 安装脚本
-└── install.sh             # 安装脚本
+│   └── config.yaml        # 主配置
+└── setup.sh               # 项目安装脚本
 ```
 
 ## 支持的系统
@@ -67,13 +76,13 @@ hamster-script/
 
 ## 配置文件
 
-主配置文件位于 `/etc/hamster-scripts/main.conf`，可自定义：
+主配置文件位于 `config/config.yaml`，可自定义：
 
-```conf
-log_dir=/var/log/hamster-scripts
-backup_dir=/var/backups/hamster-scripts
-dialog_width=60
-dialog_height=15
+```yaml
+log_dir: /var/log/hamster-scripts
+backup_dir: /var/backups/hamster-scripts
+work_dir: /root/cs
+install_dir: /cs
 ```
 
 ## 菜单功能
@@ -127,7 +136,7 @@ dialog_height=15
 
 ### 模块开发
 
-每个功能模块位于 `modules/` 目录，使用 `.mod.sh` 后缀：
+每个功能模块位于 `app/` 目录：
 
 ```bash
 #!/bin/bash
@@ -147,12 +156,25 @@ module_name_menu() {
 }
 ```
 
+### 工具开发
+
+在 `tools/` 目录创建新工具：
+
+```bash
+tools/
+└── my-tool/
+    ├── tool.conf      # 工具配置
+    ├── install.sh     # 安装脚本
+    └── manage.sh      # 管理脚本
+```
+
 ### 核心函数
 
 - `log_info/log_success/log_warn/log_error` - 日志输出
 - `ui_menu/ui_msg/ui_input/ui_confirm` - 对话框封装
 - `pkg_install/pkg_remove/pkg_search` - 包管理
-- `sys_get_info/sys_service_*` - 系统函数
+- `pkg_ensure_node/pkg_ensure_redis/pkg_ensure_mongodb` - 依赖检测安装
+- `tool_install/tool_start/tool_stop/tool_status` - 工具管理
 
 
 ## License

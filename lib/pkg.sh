@@ -1,5 +1,29 @@
 #!/bin/bash
 
+# ─── 镜像源配置（不影响系统配置） ─────────────────────────────
+NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
+APT_MIRROR="${APT_MIRROR:-https://mirrors.aliyun.com}"
+GITHUB_PROXY="${GITHUB_PROXY:-https://gh-proxy.com/}"
+
+# ─── 内部辅助函数 ─────────────────────────────────────────────
+
+# 带镜像源的 apt 安装
+_apt_install() {
+    local packages=("$@")
+    local temp_conf
+    temp_conf=$(mktemp)
+    
+    cat > "$temp_conf" << EOF
+deb ${APT_MIRROR}/ubuntu/ $(lsb_release -cs 2>/dev/null || echo focal) main restricted
+deb ${APT_MIRROR}/ubuntu/ $(lsb_release -cs 2>/dev/null || echo focal)-updates main restricted
+EOF
+    
+    apt -o Dir::Etc::SourceList="$temp_conf" install -y "${packages[@]}"
+    rm -f "$temp_conf"
+}
+
+# ─── 包管理器检测 ─────────────────────────────────────────────
+
 pkg_get_system_type() {
     if [[ -f /etc/os-release ]]; then
         source /etc/os-release
@@ -71,7 +95,7 @@ pkg_install() {
             local major
             major=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
             if [[ "$major" -ge 18 ]] 2>/dev/null; then
-                echo "Node.js $(node -v) 已满足要求"
+                log_info "Node.js $(node -v) 已满足要求"
                 return 0
             fi
         fi
@@ -85,7 +109,7 @@ pkg_install() {
 
         # 尝试 NodeSource
         if command -v curl &>/dev/null; then
-            echo "正在通过 NodeSource 安装 Node.js 20..."
+            log_info "正在通过 NodeSource 安装 Node.js 20..."
             case "$pkg_manager" in
                 apt)
                     curl -fsSL https://deb.nodesource.com/setup_20.x | bash - 2>&1 && \
@@ -95,13 +119,13 @@ pkg_install() {
                     curl -fsSL https://rpm.nodesource.com/setup_20.x | bash - 2>&1 && \
                     yum install -y nodejs 2>&1 || return 1
                     ;;
-                *) echo "错误: 不支持的包管理器"; return 1 ;;
+                *) log_error "不支持的包管理器"; return 1 ;;
             esac
             return $?
         fi
 
         # 兜底：直接安装 nodejs（版本可能较老）
-        echo "警告: 无法使用 NodeSource，将通过系统包管理器安装 nodejs（版本可能较老）"
+        log_warn "无法使用 NodeSource，将通过系统包管理器安装 nodejs（版本可能较老）"
         package="nodejs"
     fi
 
@@ -132,12 +156,12 @@ YUMEOF
                 yum install -y mongodb-org 2>&1 || return 1
                 return $?
                 ;;
-            *) echo "错误: 不支持的包管理器"; return 1 ;;
+            *) log_error "不支持的包管理器"; return 1 ;;
         esac
     fi
 
     case "$pkg_manager" in
-        apt) DEBIAN_FRONTEND=noninteractive apt install -y "$package" ;;
+        apt) _apt_install "$package" ;;
         yum) yum install -y "$package" ;;
         pacman) pacman -S --noconfirm "$package" ;;
         apk) apk add "$package" ;;
@@ -368,4 +392,126 @@ pkg_upgrade_all() {
         apk) apk upgrade || return 1 ;;
         *) return 1 ;;
     esac
+}
+
+# ─── npm/pnpm 安装（带镜像源） ─────────────────────────────────
+
+pkg_npm_install() {
+    if command -v pnpm &>/dev/null; then
+        pnpm i --registry="$NPM_REGISTRY" "$@"
+    else
+        npm install --registry="$NPM_REGISTRY" "$@"
+    fi
+}
+
+# ─── 下载文件（带 GitHub 代理） ────────────────────────────────
+
+pkg_download_file() {
+    local url="$1"
+    local target="$2"
+
+    # 自动添加 GitHub 代理
+    if [[ "$url" == *"github.com"* && -n "${GITHUB_PROXY:-}" ]]; then
+        url="${GITHUB_PROXY}${url}"
+    fi
+
+    if command -v wget &>/dev/null; then
+        wget -q --show-progress -O "$target" "$url" 2>&1
+    elif command -v curl &>/dev/null; then
+        curl -L --progress-bar -o "$target" "$url" 2>&1
+    else
+        log_error "需要 wget 或 curl"
+        return 1
+    fi
+}
+
+# ─── Git 克隆（带 GitHub 代理） ────────────────────────────────
+
+pkg_git_clone() {
+    local url="$1"
+    local target="$2"
+    
+    # 自动添加 GitHub 代理
+    if [[ "$url" == *"github.com"* && -n "$GITHUB_PROXY" ]]; then
+        url="${GITHUB_PROXY}${url}"
+    fi
+    
+    git clone --depth 1 "$url" "$target"
+}
+
+# ─── 高级安装函数 ──────────────────────────────────────────────
+
+# 确保 Node.js 18+ 已安装
+pkg_ensure_node() {
+    local min_ver="${1:-18}"
+    
+    if command -v node &>/dev/null; then
+        local major
+        major=$(node -v 2>/dev/null | sed 's/v//' | cut -d. -f1)
+        if [[ "$major" -ge "$min_ver" ]] 2>/dev/null; then
+            log_info "Node.js $(node -v) 已满足要求"
+            return 0
+        fi
+    fi
+    
+    log_info "正在安装 Node.js ${min_ver}..."
+    pkg_install "node"
+}
+
+# 确保 pnpm 已安装
+pkg_ensure_pnpm() {
+    if command -v pnpm &>/dev/null; then
+        log_info "pnpm $(pnpm -v) 已安装"
+        return 0
+    fi
+    
+    log_info "正在安装 pnpm..."
+    npm install -g pnpm --registry="$NPM_REGISTRY"
+}
+
+# 确保 Redis 已安装并启动
+pkg_ensure_redis() {
+    if command -v redis-server &>/dev/null; then
+        log_info "Redis 已安装"
+    else
+        log_info "正在安装 Redis..."
+        pkg_install "redis" || pkg_install "redis-server"
+    fi
+    
+    # 启动服务
+    if command -v systemctl &>/dev/null; then
+        systemctl enable redis-server 2>/dev/null || true
+        systemctl start redis-server 2>/dev/null || true
+    elif command -v rc-service &>/dev/null; then
+        rc-service redis start 2>/dev/null || true
+    fi
+}
+
+# 确保 MongoDB 已安装并启动
+pkg_ensure_mongodb() {
+    if command -v mongod &>/dev/null; then
+        log_info "MongoDB 已安装"
+    else
+        log_info "正在安装 MongoDB..."
+        pkg_install "mongodb-org" || pkg_install "mongodb"
+    fi
+    
+    # 启动服务
+    if command -v systemctl &>/dev/null; then
+        systemctl enable mongod 2>/dev/null || true
+        systemctl start mongod 2>/dev/null || true
+    elif command -v rc-service &>/dev/null; then
+        rc-service mongod start 2>/dev/null || true
+    fi
+}
+
+# 确保 Chromium 已安装
+pkg_ensure_chromium() {
+    if command -v chromium-browser &>/dev/null || command -v chromium &>/dev/null; then
+        log_info "Chromium 已安装"
+        return 0
+    fi
+    
+    log_info "正在安装 Chromium..."
+    pkg_install "chromium-browser" || pkg_install "chromium"
 }

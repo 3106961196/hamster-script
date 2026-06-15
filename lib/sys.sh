@@ -1,5 +1,7 @@
 #!/bin/bash
 
+# 系统信息
+
 sys_get_info() {
     echo "=== 系统信息 ==="
     echo ""
@@ -37,8 +39,6 @@ sys_get_info() {
     uptime
 }
 
-
-
 sys_get_cpu_usage() {
     local cpu_usage
     if command_exists top; then
@@ -63,62 +63,7 @@ sys_get_disk_usage() {
     df -h "$path" | tail -1 | awk '{print $3 " / " $2 " (" $5 " 已用)"}'
 }
 
-sys_is_systemd() {
-    command_exists systemctl && [[ -d /run/systemd/system ]]
-}
-
-sys_service_list() {
-    if sys_is_systemd; then
-        systemctl list-units --type=service --state=running
-    else
-        service --status-all 2>/dev/null | grep +
-    fi
-}
-
-sys_service_start() {
-    local service="$1"
-    if sys_is_systemd; then
-        systemctl start "$service"
-    else
-        service "$service" start
-    fi
-}
-
-sys_service_stop() {
-    local service="$1"
-    if sys_is_systemd; then
-        systemctl stop "$service"
-    else
-        service "$service" stop
-    fi
-}
-
-sys_service_restart() {
-    local service="$1"
-    if sys_is_systemd; then
-        systemctl restart "$service"
-    else
-        service "$service" restart
-    fi
-}
-
-sys_service_status() {
-    local service="$1"
-    if sys_is_systemd; then
-        systemctl status "$service"
-    else
-        service "$service" status
-    fi
-}
-
-sys_service_is_running() {
-    local service="$1"
-    if sys_is_systemd; then
-        systemctl is-active --quiet "$service"
-    else
-        service "$service" status &>/dev/null
-    fi
-}
+# 时区管理
 
 sys_set_timezone() {
     local timezone="$1"
@@ -168,55 +113,7 @@ sys_sync_time() {
     fi
 }
 
-sys_get_public_ip() {
-    local ip
-    if command_exists curl; then
-        ip=$(curl -s ifconfig.me 2>/dev/null || curl -s icanhazip.com 2>/dev/null)
-    elif command_exists wget; then
-        ip=$(wget -qO- ifconfig.me 2>/dev/null || wget -qO- icanhazip.com 2>/dev/null)
-    fi
-    echo "$ip"
-}
-
-sys_get_local_ip() {
-    hostname -I 2>/dev/null | awk '{print $1}' || ip route get 1 | awk '{print $7; exit}'
-}
-
-sys_check_port() {
-    local port="$1"
-    if command_exists ss; then
-        ss -tuln | grep -q ":$port "
-    elif command_exists netstat; then
-        netstat -tuln | grep -q ":$port "
-    else
-        return 1
-    fi
-}
-
-sys_get_open_ports() {
-    if command_exists ss; then
-        ss -tuln | awk 'NR>1 {print $5}' | cut -d: -f2 | sort -n | uniq
-    elif command_exists netstat; then
-        netstat -tuln | awk 'NR>2 {print $4}' | cut -d: -f2 | sort -n | uniq
-    fi
-}
-
-sys_kill_process() {
-    local process_name="$1"
-    local signal="${2:-TERM}"
-    pkill -"$signal" "$process_name"
-}
-
-sys_get_top_processes() {
-    local sort_by="${1:-cpu}"
-    local count="${2:-10}"
-    
-    case "$sort_by" in
-        cpu) ps aux --sort=-%cpu | head -n $((count + 1)) ;;
-        mem) ps aux --sort=-%mem | head -n $((count + 1)) ;;
-        *) ps aux --sort=-%cpu | head -n $((count + 1)) ;;
-    esac
-}
+# 系统清理
 
 sys_clean_journal() {
     local days="${1:-7}"
@@ -235,195 +132,4 @@ sys_clean_temp() {
         fi
     done
     log_success "已清理临时文件"
-}
-
-sys_get_firewall_type() {
-    if command_exists ufw && ufw status &>/dev/null; then
-        echo "ufw"
-    elif command_exists firewall-cmd && firewall-cmd --state &>/dev/null; then
-        echo "firewalld"
-    elif command_exists iptables && iptables -L &>/dev/null 2>&1; then
-        echo "iptables"
-    else
-        echo "none"
-    fi
-}
-
-sys_firewall_status() {
-    local fw_type
-    fw_type=$(sys_get_firewall_type)
-    
-    case "$fw_type" in
-        ufw)
-            echo "防火墙类型: UFW"
-            ufw status verbose
-            ;;
-        firewalld)
-            echo "防火墙类型: Firewalld"
-            echo "状态: $(firewall-cmd --state)"
-            echo ""
-            echo "开放区域: $(firewall-cmd --get-active-zones)"
-            echo "开放服务: $(firewall-cmd --list-services)"
-            echo "开放端口: $(firewall-cmd --list-ports)"
-            ;;
-        iptables)
-            echo "防火墙类型: iptables"
-            iptables -L -n --line-numbers
-            ;;
-        *)
-            echo "未检测到防火墙"
-            echo "建议安装: apt install ufw 或 yum install firewalld"
-            ;;
-    esac
-}
-
-sys_firewall_enable() {
-    local fw_type
-    fw_type=$(sys_get_firewall_type)
-    
-    case "$fw_type" in
-        ufw)
-            ufw enable
-            log_success "UFW 防火墙已启用"
-            ;;
-        firewalld)
-            systemctl enable firewalld
-            systemctl start firewalld
-            log_success "Firewalld 防火墙已启用"
-            ;;
-        iptables)
-            log_warn "iptables 需要手动配置规则"
-            return 1
-            ;;
-        *)
-            if command_exists apt; then
-                apt install -y ufw
-                ufw enable
-                log_success "已安装并启用 UFW"
-            elif command_exists yum; then
-                yum install -y firewalld
-                systemctl enable firewalld
-                systemctl start firewalld
-                log_success "已安装并启用 Firewalld"
-            else
-                log_error "无法自动安装防火墙"
-                return 1
-            fi
-            ;;
-    esac
-}
-
-sys_firewall_disable() {
-    local fw_type
-    fw_type=$(sys_get_firewall_type)
-    
-    case "$fw_type" in
-        ufw)
-            ufw disable
-            log_success "UFW 防火墙已禁用"
-            ;;
-        firewalld)
-            systemctl stop firewalld
-            systemctl disable firewalld
-            log_success "Firewalld 防火墙已禁用"
-            ;;
-        iptables)
-            iptables -F
-            iptables -X
-            log_success "iptables 规则已清空"
-            ;;
-        *)
-            log_warn "未检测到防火墙"
-            ;;
-    esac
-}
-
-sys_firewall_open_port() {
-    local port="$1"
-    local protocol="${2:-tcp}"
-    local fw_type
-    fw_type=$(sys_get_firewall_type)
-    
-    if [[ -z "$port" ]]; then
-        log_error "端口号不能为空"
-        return 1
-    fi
-    
-    case "$fw_type" in
-        ufw)
-            ufw allow "$port/$protocol"
-            log_success "已开放端口 $port/$protocol"
-            ;;
-        firewalld)
-            firewall-cmd --permanent --add-port="$port/$protocol"
-            firewall-cmd --reload
-            log_success "已开放端口 $port/$protocol"
-            ;;
-        iptables)
-            iptables -I INPUT -p "$protocol" --dport "$port" -j ACCEPT
-            log_success "已开放端口 $port/$protocol"
-            log_warn "注意: iptables 规则重启后会丢失，请手动保存"
-            ;;
-        *)
-            log_error "未检测到防火墙，请先启用防火墙"
-            return 1
-            ;;
-    esac
-}
-
-sys_firewall_close_port() {
-    local port="$1"
-    local protocol="${2:-tcp}"
-    local fw_type
-    fw_type=$(sys_get_firewall_type)
-    
-    if [[ -z "$port" ]]; then
-        log_error "端口号不能为空"
-        return 1
-    fi
-    
-    case "$fw_type" in
-        ufw)
-            ufw delete allow "$port/$protocol"
-            log_success "已关闭端口 $port/$protocol"
-            ;;
-        firewalld)
-            firewall-cmd --permanent --remove-port="$port/$protocol"
-            firewall-cmd --reload
-            log_success "已关闭端口 $port/$protocol"
-            ;;
-        iptables)
-            iptables -D INPUT -p "$protocol" --dport "$port" -j ACCEPT
-            log_success "已关闭端口 $port/$protocol"
-            ;;
-        *)
-            log_error "未检测到防火墙"
-            return 1
-            ;;
-    esac
-}
-
-sys_parse_process_list() {
-    local ps_output="$1"
-    local max_count="${2:-20}"
-    
-    local count=0
-    
-    while IFS= read -r line; do
-        if [[ -n "$line" ]] && [[ ! "$line" =~ ^USER ]]; then
-            local pid cpu mem comm
-            pid=$(echo "$line" | awk '{print $2}')
-            cpu=$(echo "$line" | awk '{print $3}')
-            mem=$(echo "$line" | awk '{print $4}')
-            comm=$(echo "$line" | awk '{for(i=11;i<=NF;i++) printf $i " "; print ""}' | xargs)
-            
-            if [[ -n "$pid" ]]; then
-                echo "$pid CPU:${cpu}% MEM:${mem}% - ${comm:0:40}"
-                ((count++))
-                if [[ $count -ge $max_count ]]; then
-                    break
-                fi
-            fi
-        fi
-    done <<< "$ps_output"    
 }

@@ -1,6 +1,9 @@
 #!/bin/bash
 
-LOG_FILE="${CONFIG[log_dir]}/${PROJECT_NAME}.log"
+# 日志系统
+
+# 延迟初始化 LOG_FILE
+LOG_FILE=""
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
 LOG_TO_FILE="${LOG_TO_FILE:-true}"
 
@@ -46,9 +49,18 @@ _format_message() {
 
 _write_to_file() {
     local message="$1"
-    local log_dir
-    log_dir="${CONFIG[log_dir]}"
     
+    # 延迟初始化 LOG_FILE
+    if [[ -z "$LOG_FILE" ]]; then
+        local log_dir="${CONFIG[log_dir]:-/var/log}"
+        if [[ ! -d "$log_dir" ]]; then
+            mkdir -p "$log_dir" 2>/dev/null || return 1
+        fi
+        LOG_FILE="$log_dir/${PROJECT_NAME}.log"
+    fi
+    
+    local log_dir
+    log_dir=$(dirname "$LOG_FILE")
     if [[ ! -d "$log_dir" ]]; then
         mkdir -p "$log_dir" 2>/dev/null || return 1
     fi

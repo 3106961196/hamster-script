@@ -3,6 +3,10 @@
 REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
+# GitHub 代理配置
+_git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
+git config --global "$_git_proxy_cfg" "https://github.com/"
+
 TOTAL_STEPS=6
 CURRENT_STEP=0
 
