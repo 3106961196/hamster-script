@@ -2,8 +2,6 @@
 
 # 配置管理
 
-declare -A CONFIG
-
 # YAML 解析
 parse_yaml() {
     local yaml_file="$1"

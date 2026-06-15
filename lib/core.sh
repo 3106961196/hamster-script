@@ -29,6 +29,9 @@ LIB_DIR="$PROJECT_ROOT/lib"
 APP_DIR="$PROJECT_ROOT/app"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 
+# 全局关联数组（必须在 load_all_libs 之前声明，避免 source 在函数内导致局部作用域）
+declare -A CONFIG
+
 # 加载库
 load_lib() {
     local lib_name="$1"
