@@ -24,6 +24,8 @@ cs              # 启动主菜单
 cs update       # 更新脚本（别名: cs r）
 cs version      # 显示版本
 cs help         # 查看帮助
+hamster-tmux    # 进入 tmux 桌面（SSH 登录自动进入）
+cs tmux         # 同上（未安装 wrapper 时可用）
 ```
 
 ## 目录结构
@@ -63,7 +65,13 @@ hamster-script/
 │       ├── install.sh     # 安装脚本
 │       └── manage.sh      # 管理脚本
 ├── config/                 # 配置文件
-│   └── config.yaml        # 主配置
+│   ├── config.yaml        # 主配置
+│   └── tmux/              # tmux 桌面（对齐 xrk 模式）
+│       ├── tmux.sh        # 桌面入口
+│       ├── setup.sh       # 安装并写入 ~/.tmux.conf
+│       ├── tmux.conf      # 主配置模板
+│       ├── tmux-menus.conf
+│       └── tmux-menu.sh
 └── setup.sh               # 项目安装脚本
 ```
 

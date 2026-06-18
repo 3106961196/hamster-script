@@ -17,6 +17,7 @@ _show_help() {
     echo "命令:"
     echo "  (无参数)    启动主菜单"
     echo "  update, r   更新脚本"
+    echo "  tmux        进入 tmux 桌面"
     echo "  version     显示版本"
     echo "  help, -h    查看帮助"
 }
@@ -27,6 +28,10 @@ main() {
             r|update)
                 load_module "update"
                 update_do
+                ;;
+            tmux)
+                export HAMSTER_ROOT="$PROJECT_ROOT"
+                exec bash "$PROJECT_ROOT/config/tmux/tmux.sh" "${@:2}"
                 ;;
             version)
                 echo "${PROJECT_NAME} v${PROJECT_VERSION}"
@@ -43,15 +48,7 @@ main() {
         esac
         exit 0
     fi
-    
-    if [[ -n "$SSH_CONNECTION" ]] && [[ -z "$TMUX" ]]; then
-        local session_name="🐹 Hamster Script"
-        if tmux has-session -t "$session_name" 2>/dev/null; then
-            tmux attach-session -t "$session_name"
-            exit 0
-        fi
-    fi
-    
+
     load_module "menu"
     main_menu
 }

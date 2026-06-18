@@ -245,18 +245,16 @@ create_directories() {
 setup_tmux() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "配置 Tmux..."
-    
+
+    export HAMSTER_ROOT="$INSTALL_DIR"
+    bash "$INSTALL_DIR/config/tmux/setup.sh"
+
     local bashrc="$HOME/.bashrc"
     local auto_tmux="# Hamster Script Auto Tmux
-if [ -n \"\$SSH_CONNECTION\" ] && [ -z \"\$TMUX\" ] && [ -n \"\$PS1\" ] && command -v tmux >/dev/null 2>&1; then
-    SESSION=\"🐹 Hamster Script\"
-    if tmux has-session -t \"\$SESSION\" 2>/dev/null; then
-        tmux attach-session -t \"\$SESSION\"
-    else
-        bash ${INSTALL_DIR}/packages/tmux.sh
-    fi
+if [ -n \"\$SSH_CONNECTION\" ] && [ -z \"\$TMUX\" ] && [ -n \"\$PS1\" ] && command -v hamster-tmux >/dev/null 2>&1; then
+    hamster-tmux
 fi"
-    
+
     if ! grep -q "Hamster Script Auto Tmux" "$bashrc" 2>/dev/null; then
         echo "" >> "$bashrc"
         echo "$auto_tmux" >> "$bashrc"
@@ -277,6 +275,7 @@ print_success() {
     echo "  cs update   - 更新脚本（别名: cs r）"
     echo "  cs version  - 显示版本"
     echo "  cs help     - 查看帮助"
+    echo "  hamster-tmux - 进入 tmux 桌面"
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo ""
@@ -312,7 +311,7 @@ main() {
     
     if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
         echo "正在启动 Tmux..."
-        bash "$INSTALL_DIR/packages/tmux.sh"
+        hamster-tmux 2>/dev/null || bash "$INSTALL_DIR/config/tmux/tmux.sh"
     fi
 }
 
