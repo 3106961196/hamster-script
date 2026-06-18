@@ -391,7 +391,6 @@ system_time_show() {
 system_time_set_timezone() {
     local timezones=(
         "Asia/Shanghai" "亚洲/上海"
-        "Asia/Beijing" "亚洲/北京"
         "Asia/Tokyo" "亚洲/东京"
         "Asia/Seoul" "亚洲/首尔"
         "Asia/Hong_Kong" "亚洲/香港"
@@ -469,7 +468,7 @@ system_user_delete() {
         local name uid
         name=$(echo "$line" | cut -d: -f1)
         uid=$(echo "$line" | cut -d: -f3)
-        if [[ "$uid" -ge 1000 ]] || [[ "$uid" -eq 0 ]]; then
+        if [[ "$uid" -ge 1000 ]]; then
             users+=("$name" "UID: $uid")
         fi
     done < /etc/passwd
@@ -490,7 +489,7 @@ system_user_password() {
         local name uid
         name=$(echo "$line" | cut -d: -f1)
         uid=$(echo "$line" | cut -d: -f3)
-        if [[ "$uid" -ge 1000 ]] || [[ "$uid" -eq 0 ]]; then
+        if [[ "$uid" -ge 1000 ]]; then
             users+=("$name" "UID: $uid")
         fi
     done < /etc/passwd
