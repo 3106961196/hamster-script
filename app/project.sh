@@ -35,7 +35,7 @@ project_check_status() {
                 _inst["$key"]="no"
             fi
         else
-            if [[ -d "/root/cs/$key" ]]; then
+            if [[ -d "$(get_work_dir)/$key" ]]; then
                 _inst["$key"]="yes"
             else
                 _inst["$key"]="no"
@@ -111,7 +111,7 @@ project_menu() {
                 bash "$(project_manage_script "$selected")"
                 ui_clear
             else
-                ui_msg "$display 安装目录: /root/cs/$selected" "提示"
+                ui_msg "$display 安装目录: $(get_work_dir)/$selected" "提示"
             fi
         else
             if ui_confirm "⚠️ $display 尚未安装\n\n是否立即安装？"; then
@@ -148,13 +148,13 @@ project_do_install() {
             ;;
         static)
             # TRSS-Yunzai：从 Gitee 克隆
-            local target="/root/cs/$name"
+            local target="$(get_work_dir)/$name"
             if [[ -d "$target" ]]; then
                 ui_msg "$name 已存在" "提示"
                 return
             fi
             ui_info "正在安装 $name ..."
-            mkdir -p /root/cs
+            mkdir -p "$(get_work_dir)"
             if git clone --depth 1 "https://gitee.com/TimeRainStarSky/Yunzai.git" "$target" 2>&1; then
                 ui_success "$name 安装成功"
                 ui_info "安装目录: $target"

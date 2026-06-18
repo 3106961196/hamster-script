@@ -6,6 +6,7 @@ _git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
     git config --global "$_git_proxy_cfg" "https://github.com/"
 unset _git_proxy_cfg
 
-cd /root/cs
+WORK_DIR="${HAMSTER_WORK_DIR:-/root/cs}"
+cd "$WORK_DIR"
 echo -e "\033[1;32m使用\"cs\"命令打开脚本主菜单\033[0m"
 exec bash

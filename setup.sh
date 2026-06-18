@@ -203,9 +203,9 @@ create_command() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "创建 cs 命令..."
     
-    cat > /usr/local/bin/cs << 'EOF'
+    cat > /usr/local/bin/cs << EOF
 #!/bin/bash
-bash /cs/bin/cs "$@"
+bash ${INSTALL_DIR}/bin/cs "\$@"
 EOF
     chmod +x /usr/local/bin/cs
 }
@@ -223,6 +223,7 @@ create_directories() {
     
     if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
         cp "$INSTALL_DIR/config/config.yaml" /etc/hamster-scripts/ 2>/dev/null
+        echo "install_dir: $INSTALL_DIR" >> /etc/hamster-scripts/config.yaml
     fi
 }
 
@@ -231,15 +232,15 @@ setup_tmux() {
     show_step "$CURRENT_STEP" "配置 Tmux..."
     
     local bashrc="$HOME/.bashrc"
-    local auto_tmux='# Hamster Script Auto Tmux
-if [ -n "$SSH_CONNECTION" ] && [ -z "$TMUX" ] && [ -n "$PS1" ] && command -v tmux >/dev/null 2>&1; then
-    SESSION="🐹 Hamster Script"
-    if tmux has-session -t "$SESSION" 2>/dev/null; then
-        tmux attach-session -t "$SESSION"
+    local auto_tmux="# Hamster Script Auto Tmux
+if [ -n \"\$SSH_CONNECTION\" ] && [ -z \"\$TMUX\" ] && [ -n \"\$PS1\" ] && command -v tmux >/dev/null 2>&1; then
+    SESSION=\"🐹 Hamster Script\"
+    if tmux has-session -t \"\$SESSION\" 2>/dev/null; then
+        tmux attach-session -t \"\$SESSION\"
     else
-        bash /cs/packages/tmux.sh
+        bash ${INSTALL_DIR}/packages/tmux.sh
     fi
-fi'
+fi"
     
     if ! grep -q "Hamster Script Auto Tmux" "$bashrc" 2>/dev/null; then
         echo "" >> "$bashrc"

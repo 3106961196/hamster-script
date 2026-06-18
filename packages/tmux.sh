@@ -1,15 +1,19 @@
 #!/bin/bash
 
 # 配置变量
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+INSTALL_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
 SESSION_NAME="🐹 Hamster Script"
-TMUX_CONF="/cs/config/tmux/.tmux.conf"
+TMUX_CONF="${INSTALL_DIR}/config/tmux/.tmux.conf"
+WINDOW_A="${INSTALL_DIR}/config/tmux/window_a.sh"
+WINDOW_B="${INSTALL_DIR}/config/tmux/window_b.sh"
 
 # 创建桌面端布局
 create_desktop_layout() {
-    tmux new-session -d -s "$SESSION_NAME" -n "甲" "bash /cs/config/tmux/window_a.sh; exec bash"
-    tmux split-window -v -t "$SESSION_NAME":甲 "bash /cs/config/tmux/window_b.sh; exec bash"
-    tmux new-window -t "$SESSION_NAME" -n "乙" "bash /cs/config/tmux/window_b.sh; exec bash"
-    tmux split-window -v -t "$SESSION_NAME":乙 "bash /cs/config/tmux/window_b.sh; exec bash"
+    tmux new-session -d -s "$SESSION_NAME" -n "甲" "bash ${WINDOW_A}; exec bash"
+    tmux split-window -v -t "$SESSION_NAME":甲 "bash ${WINDOW_B}; exec bash"
+    tmux new-window -t "$SESSION_NAME" -n "乙" "bash ${WINDOW_B}; exec bash"
+    tmux split-window -v -t "$SESSION_NAME":乙 "bash ${WINDOW_B}; exec bash"
     tmux select-window -t "$SESSION_NAME":0
 }
 
@@ -23,8 +27,8 @@ handle_error() {
 check_dependencies() {
     command -v tmux >/dev/null 2>&1 || handle_error "未安装 tmux"
     [ -f "$TMUX_CONF" ] || handle_error "配置文件不存在: $TMUX_CONF"
-    [ -f "/cs/config/tmux/window_a.sh" ] || handle_error "window_a.sh 不存在"
-    [ -f "/cs/config/tmux/window_b.sh" ] || handle_error "window_b.sh 不存在"
+    [ -f "$WINDOW_A" ] || handle_error "window_a.sh 不存在"
+    [ -f "$WINDOW_B" ] || handle_error "window_b.sh 不存在"
 }
 
 # 主函数
