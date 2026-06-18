@@ -3,9 +3,15 @@
 REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
-# GitHub 代理配置
-_git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
-git config --global "$_git_proxy_cfg" "https://github.com/"
+# GitHub 代理（可选，需显式启用: ENABLE_GITHUB_PROXY=1）
+setup_git_proxy() {
+    if [[ "${ENABLE_GITHUB_PROXY:-0}" != "1" ]]; then
+        return 0
+    fi
+    local _git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
+    git config --global "$_git_proxy_cfg" "https://github.com/"
+    echo "已启用 GitHub 代理 (gh-proxy.com)，可通过 git config --global --unset-all url.https://gh-proxy.com/https://github.com/.insteadOf 撤销"
+}
 
 TOTAL_STEPS=6
 CURRENT_STEP=0
@@ -173,6 +179,15 @@ download_scripts() {
                 echo "更新现有安装..."
                 cd "$INSTALL_DIR"
                 git fetch origin >/dev/null 2>&1
+                if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                    echo ""
+                    echo "警告: 检测到本地未提交的修改，强制更新将丢失这些改动"
+                    read -p "是否继续强制更新？(y/N): " force_update
+                    if [[ ! "$force_update" =~ ^[Yy]$ ]]; then
+                        echo "已取消更新"
+                        return 0
+                    fi
+                fi
                 git reset --hard origin/main >/dev/null 2>&1
                 git clean -f -d >/dev/null 2>&1
             else
@@ -282,6 +297,7 @@ main() {
     print_banner
     check_root
     check_os
+    setup_git_proxy
     install_dependencies
     check_dialog
     download_scripts
