@@ -21,7 +21,7 @@ bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/setup.sh)
 
 ```bash
 cs              # 启动主菜单
-cs update       # 更新脚本
+cs update       # 更新脚本（别名: cs r）
 cs version      # 显示版本
 cs help         # 查看帮助
 ```

@@ -11,19 +11,34 @@ export PROJECT_ROOT
 source "$PROJECT_ROOT/lib/core.sh"
 init_core
 
+_show_help() {
+    echo "用法: cs [命令]"
+    echo ""
+    echo "命令:"
+    echo "  (无参数)    启动主菜单"
+    echo "  update, r   更新脚本"
+    echo "  version     显示版本"
+    echo "  help, -h    查看帮助"
+}
+
 main() {
     if [[ $# -gt 0 ]]; then
         case "$1" in
-            r)
+            r|update)
                 load_module "update"
                 update_do
                 ;;
+            version)
+                echo "${PROJECT_NAME} v${PROJECT_VERSION}"
+                ;;
+            help|-h|--help)
+                _show_help
+                ;;
             *)
-                echo "用法: cs [命令]"
+                echo "未知命令: $1"
                 echo ""
-                echo "命令:"
-                echo "  (无参数)    启动主菜单"
-                echo "  r           更新脚本"
+                _show_help
+                exit 1
                 ;;
         esac
         exit 0
