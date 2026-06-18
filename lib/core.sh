@@ -68,6 +68,7 @@ load_all_libs() {
 init_core() {
     load_all_libs
     config_load
+    init_logging
     ui_init
 }
 
