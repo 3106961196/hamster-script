@@ -5,8 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../.." && pwd)"
 
 source "$PROJECT_ROOT/lib/core.sh"
-load_lib "tool"
-load_lib "ui"
+tool_bootstrap
 
 # 加载工具配置
 source "$SCRIPT_DIR/tool.conf"

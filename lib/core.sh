@@ -71,6 +71,12 @@ init_core() {
     ui_init
 }
 
+# 工具脚本独立运行时引导（install.sh / manage.sh 子进程调用）
+tool_bootstrap() {
+    load_all_libs
+    config_load
+}
+
 # 工具函数
 command_exists() {
     command -v "$1" &>/dev/null
