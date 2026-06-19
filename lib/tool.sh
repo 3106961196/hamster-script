@@ -151,10 +151,18 @@ tool_start() {
     cd "$TOOL_INSTALL_DIR"
     
     log_info "启动 $tool_name..."
-    eval "$TOOL_START_CMD" &
-    echo $! > "$TOOL_INSTALL_DIR/.pid"
+    nohup bash -c "$TOOL_START_CMD" > /dev/null 2>&1 &
+    local pid=$!
+    echo "$pid" > "$TOOL_INSTALL_DIR/.pid"
     
-    log_success "$tool_name 已启动 (PID: $(cat "$TOOL_INSTALL_DIR/.pid"))"
+    sleep 1
+    if kill -0 "$pid" 2>/dev/null; then
+        log_success "$tool_name 已启动 (PID: $pid)"
+    else
+        rm -f "$TOOL_INSTALL_DIR/.pid"
+        log_error "$tool_name 启动失败"
+        return 1
+    fi
 }
 
 # 停止工具

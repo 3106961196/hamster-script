@@ -12,10 +12,25 @@ _apt_install() {
     local packages=("$@")
     local temp_conf
     temp_conf=$(mktemp)
+    local distro_id codename mirror_path
+    
+    if [[ -f /etc/os-release ]]; then
+        source /etc/os-release
+        distro_id="${ID:-ubuntu}"
+        codename="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null)}"
+    else
+        distro_id="ubuntu"
+        codename="$(lsb_release -cs 2>/dev/null || echo jammy)"
+    fi
+    
+    case "$distro_id" in
+        debian) mirror_path="debian" ;;
+        *) mirror_path="ubuntu" ;;
+    esac
     
     cat > "$temp_conf" << EOF
-deb ${APT_MIRROR}/ubuntu/ $(lsb_release -cs 2>/dev/null || echo focal) main restricted
-deb ${APT_MIRROR}/ubuntu/ $(lsb_release -cs 2>/dev/null || echo focal)-updates main restricted
+deb ${APT_MIRROR}/${mirror_path}/ ${codename} main restricted
+deb ${APT_MIRROR}/${mirror_path}/ ${codename}-updates main restricted
 EOF
     
     apt -o Dir::Etc::SourceList="$temp_conf" install -y "${packages[@]}"

@@ -3,9 +3,15 @@
 REPO_URL="https://github.com/3106961196/hamster-script.git"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
-# GitHub 代理配置
-_git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
-git config --global "$_git_proxy_cfg" "https://github.com/"
+# GitHub 代理（可选，需显式启用: ENABLE_GITHUB_PROXY=1）
+setup_git_proxy() {
+    if [[ "${ENABLE_GITHUB_PROXY:-0}" != "1" ]]; then
+        return 0
+    fi
+    local _git_proxy_cfg="url.https://gh-proxy.com/https://github.com/.insteadOf"
+    git config --global "$_git_proxy_cfg" "https://github.com/"
+    echo "已启用 GitHub 代理 (gh-proxy.com)，可通过 git config --global --unset-all url.https://gh-proxy.com/https://github.com/.insteadOf 撤销"
+}
 
 TOTAL_STEPS=6
 CURRENT_STEP=0
@@ -173,6 +179,15 @@ download_scripts() {
                 echo "更新现有安装..."
                 cd "$INSTALL_DIR"
                 git fetch origin >/dev/null 2>&1
+                if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+                    echo ""
+                    echo "警告: 检测到本地未提交的修改，强制更新将丢失这些改动"
+                    read -p "是否继续强制更新？(y/N): " force_update
+                    if [[ ! "$force_update" =~ ^[Yy]$ ]]; then
+                        echo "已取消更新"
+                        return 0
+                    fi
+                fi
                 git reset --hard origin/main >/dev/null 2>&1
                 git clean -f -d >/dev/null 2>&1
             else
@@ -203,9 +218,9 @@ create_command() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "创建 cs 命令..."
     
-    cat > /usr/local/bin/cs << 'EOF'
+    cat > /usr/local/bin/cs << EOF
 #!/bin/bash
-bash /cs/bin/cs "$@"
+bash ${INSTALL_DIR}/bin/cs "\$@"
 EOF
     chmod +x /usr/local/bin/cs
 }
@@ -223,24 +238,23 @@ create_directories() {
     
     if [[ -f "$INSTALL_DIR/config/config.yaml" ]]; then
         cp "$INSTALL_DIR/config/config.yaml" /etc/hamster-scripts/ 2>/dev/null
+        echo "install_dir: $INSTALL_DIR" >> /etc/hamster-scripts/config.yaml
     fi
 }
 
 setup_tmux() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
     show_step "$CURRENT_STEP" "配置 Tmux..."
-    
+
+    export HAMSTER_ROOT="$INSTALL_DIR"
+    bash "$INSTALL_DIR/config/tmux/setup.sh"
+
     local bashrc="$HOME/.bashrc"
-    local auto_tmux='# Hamster Script Auto Tmux
-if [ -n "$SSH_CONNECTION" ] && [ -z "$TMUX" ] && [ -n "$PS1" ] && command -v tmux >/dev/null 2>&1; then
-    SESSION="🐹 Hamster Script"
-    if tmux has-session -t "$SESSION" 2>/dev/null; then
-        tmux attach-session -t "$SESSION"
-    else
-        bash /cs/packages/tmux.sh
-    fi
-fi'
-    
+    local auto_tmux="# Hamster Script Auto Tmux
+if [ -n \"\$SSH_CONNECTION\" ] && [ -z \"\$TMUX\" ] && [ -n \"\$PS1\" ] && command -v hamster-tmux >/dev/null 2>&1; then
+    hamster-tmux
+fi"
+
     if ! grep -q "Hamster Script Auto Tmux" "$bashrc" 2>/dev/null; then
         echo "" >> "$bashrc"
         echo "$auto_tmux" >> "$bashrc"
@@ -258,7 +272,10 @@ print_success() {
     echo ""
     echo "使用方法:"
     echo "  cs          - 启动主菜单"
-    echo "  cs r        - 更新脚本"
+    echo "  cs update   - 更新脚本（别名: cs r）"
+    echo "  cs version  - 显示版本"
+    echo "  cs help     - 查看帮助"
+    echo "  hamster-tmux - 进入 tmux 桌面"
     echo ""
     echo "安装目录: $INSTALL_DIR"
     echo ""
@@ -281,6 +298,7 @@ main() {
     print_banner
     check_root
     check_os
+    setup_git_proxy
     install_dependencies
     check_dialog
     download_scripts
@@ -293,7 +311,7 @@ main() {
     
     if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
         echo "正在启动 Tmux..."
-        bash "$INSTALL_DIR/packages/tmux.sh"
+        hamster-tmux 2>/dev/null || bash "$INSTALL_DIR/config/tmux/tmux.sh"
     fi
 }
 

@@ -42,3 +42,8 @@ log/
 # IDE/编辑器 (扩展)
 *.sublime-*
 *.code-workspace
+
+# 本地开发工具配置
+reasonix.toml
+fix_pick.ps1
+patches/

@@ -5,8 +5,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../.." && pwd)"
 
 source "$PROJECT_ROOT/lib/core.sh"
-load_lib "tool"
-load_lib "ui"
+tool_bootstrap
 
 # 加载工具配置
 source "$SCRIPT_DIR/tool.conf"
@@ -22,10 +21,7 @@ tool_install "xrk-agt"
 
 # 询问是否启动
 if ui_confirm "是否现在启动 XRK-AGT？"; then
-    cd "$TOOL_INSTALL_DIR"
-    nohup node app.js > /dev/null 2>&1 &
-    sleep 2
-    if kill -0 $! 2>/dev/null; then
+    if tool_start "xrk-agt"; then
         ui_success "XRK-AGT 已启动"
     else
         ui_msg "XRK-AGT 启动失败，请检查 Redis 和 MongoDB 是否正常运行" "错误"

@@ -65,6 +65,15 @@ update_do() {
 
     ui_info "正在更新脚本..."
 
+    local dirty_msg=""
+    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+        dirty_msg="\n\n⚠️ 检测到本地未提交修改，更新将丢失这些改动"
+    fi
+
+    if ! ui_confirm "确定要更新到最新版本吗？${dirty_msg}"; then
+        return
+    fi
+
     if _update_execute; then
         ui_success "脚本更新成功！"
 

@@ -97,6 +97,7 @@ sys_firewall_disable() {
             log_success "Firewalld 防火墙已禁用"
             ;;
         iptables)
+            log_warn "iptables 规则清空可能影响远程连接，请手动保存规则"
             iptables -F
             iptables -X
             log_success "iptables 规则已清空"

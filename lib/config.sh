@@ -2,6 +2,9 @@
 
 # 配置管理
 
+# 用户可覆盖的路径键
+_CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir work_dir)
+
 # YAML 解析
 parse_yaml() {
     local yaml_file="$1"
@@ -22,7 +25,7 @@ parse_yaml() {
         [[ -z "${line// }" ]] && continue
         
         local stripped="${line#"${line%%[![:space:]]*}"}"
-        local indent=$(( ${#line} - ${#stripped} ))
+        local indent=$(( ${#line} - ${#stripped} }))
         
         while [[ ${#indent_stack[@]} -gt 1 ]] && [[ $indent -le ${indent_stack[-1]} ]]; do
             unset 'indent_stack[-1]'
@@ -82,16 +85,34 @@ parse_yaml() {
     return 0
 }
 
-# 加载配置文件
+# 加载配置文件（默认 → 系统 → 用户，后者覆盖前者）
 config_load() {
-    local config_file="${1:-$PROJECT_ROOT/config/config.yaml}"
+    local default_config="$PROJECT_ROOT/config/config.yaml"
+    local system_config="/etc/hamster-scripts/config.yaml"
+    local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
+    local loaded=0
     
-    if [[ ! -f "$config_file" ]]; then
-        log_warn "配置文件不存在: $config_file"
+    if [[ -f "$default_config" ]]; then
+        parse_yaml "$default_config"
+        loaded=1
+    fi
+    
+    if [[ -f "$system_config" ]]; then
+        parse_yaml "$system_config"
+        loaded=1
+    fi
+    
+    if [[ -f "$user_config" ]]; then
+        parse_yaml "$user_config"
+        loaded=1
+    fi
+    
+    if [[ $loaded -eq 0 ]]; then
+        log_warn "未找到配置文件，使用内置默认值"
         return 1
     fi
     
-    parse_yaml "$config_file"
+    return 0
 }
 
 # 获取配置值
@@ -102,12 +123,38 @@ config_get() {
     echo "${CONFIG[$key]:-$default}"
 }
 
+# 获取安装目录
+get_install_dir() {
+    config_get "install_dir" "/cs"
+}
+
+# 获取工作目录
+get_work_dir() {
+    config_get "work_dir" "/root/cs"
+}
+
 # 设置配置值
 config_set() {
     local key="$1"
     local value="$2"
     
     CONFIG["$key"]="$value"
+}
+
+# 保存用户覆盖配置
+save_user_config() {
+    local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
+    ensure_dir "$(dirname "$user_config")"
+    
+    {
+        echo "# Hamster Script 用户配置覆盖"
+        echo "# 由快捷设置自动生成"
+        for key in "${_CONFIG_PATH_KEYS[@]}"; do
+            if [[ -n "${CONFIG[$key]:-}" ]]; then
+                echo "$key: ${CONFIG[$key]}"
+            fi
+        done
+    } > "$user_config"
 }
 
 # 保存配置到文件

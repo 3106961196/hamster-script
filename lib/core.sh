@@ -68,7 +68,14 @@ load_all_libs() {
 init_core() {
     load_all_libs
     config_load
+    init_logging
     ui_init
+}
+
+# 工具脚本独立运行时引导（install.sh / manage.sh 子进程调用）
+tool_bootstrap() {
+    load_all_libs
+    config_load
 }
 
 # 工具函数
