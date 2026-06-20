@@ -2,7 +2,7 @@
 # XRK-AGT 管理脚本（精简版）
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/../.." && pwd)"
+PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/.." && pwd)"
 
 source "$PROJECT_ROOT/lib/core.sh"
 tool_bootstrap
