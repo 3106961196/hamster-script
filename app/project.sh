@@ -81,11 +81,13 @@ project_menu() {
 
         # 构建菜单项
         local items=()
-        local item key type display
+        local item key type display idx=1
+        local -a keys=()
         for item in "${PROJECT_DEFS[@]}"; do
             key="${item%%|*}"
             type="${item##*|}"
             display=$(project_display_name "$key")
+            keys+=("$key")
 
             local status_text
             if [[ "${_installed[$key]}" == "yes" ]]; then
@@ -93,12 +95,17 @@ project_menu() {
             else
                 status_text="[未安装]"
             fi
-            items+=("$key" "$display $status_text")
+            items+=("$idx" "$display $status_text")
+            idx=$((idx + 1))
         done
 
         local selected
         selected=$(ui_submenu "📁 项目列表" "选择项目:" "${items[@]}")
         [[ -z "$selected" || "$selected" == "b" ]] && break
+
+        # 数字序号 → 项目 key
+        selected="${keys[$((selected - 1))]}"
+        [[ -z "$selected" ]] && break
 
         local display type
         display=$(project_display_name "$selected")
