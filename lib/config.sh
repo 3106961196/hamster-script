@@ -25,7 +25,7 @@ parse_yaml() {
         [[ -z "${line// }" ]] && continue
         
         local stripped="${line#"${line%%[![:space:]]*}"}"
-        local indent=$(( ${#line} - ${#stripped} }))
+        local indent=$(( ${#line} - ${#stripped} ))
         
         while [[ ${#indent_stack[@]} -gt 1 ]] && [[ $indent -le ${indent_stack[-1]} ]]; do
             unset 'indent_stack[-1]'
