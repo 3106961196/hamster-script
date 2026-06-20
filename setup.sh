@@ -249,16 +249,7 @@ setup_tmux() {
     export HAMSTER_ROOT="$INSTALL_DIR"
     bash "$INSTALL_DIR/config/tmux/setup.sh"
 
-    local bashrc="$HOME/.bashrc"
-    local auto_tmux="# Hamster Script Auto Tmux
-if [ -n \"\$SSH_CONNECTION\" ] && [ -z \"\$TMUX\" ] && [ -n \"\$PS1\" ] && command -v hamster-tmux >/dev/null 2>&1; then
-    hamster-tmux
-fi"
-
-    if ! grep -q "Hamster Script Auto Tmux" "$bashrc" 2>/dev/null; then
-        echo "" >> "$bashrc"
-        echo "$auto_tmux" >> "$bashrc"
-    fi
+    echo '[[ -f /cs/.init.sh ]] && source /cs/.init.sh' >> "$HOME/.bashrc"
 }
 
 print_success() {
