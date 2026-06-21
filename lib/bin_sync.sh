@@ -1,28 +1,46 @@
 #!/bin/bash
 
+_命令同步_复制() {
+    local dest="$1" src="$2"
+    rm -f "$dest"
+    sed 's/\r$//' "$src" > "$dest" && chmod 755 "$dest"
+}
+
+_命令同步_包装() {
+    local dest="$1" script="$2"
+    rm -f "$dest"
+    printf '#!/bin/bash\nexec bash %q "$@"\n' "$script" > "$dest" && chmod 755 "$dest"
+}
+
 命令同步() {
     local install_dir="${1:-${PROJECT_ROOT:-${HAMSTER_ROOT:-}}}"
     local bin_dir="${HAMSTER_BIN:-/usr/local/bin}"
-    local dest src n=0
+    local name dest src script n=0
     local -a missing=()
 
-    declare -A files=(
-        ["${bin_dir}/cs"]="${install_dir}/bin/cs"
-        ["${bin_dir}/nt"]="${install_dir}/bin/nt"
-        ["${bin_dir}/hamster-tmux"]="${install_dir}/config/tmux/tmux.sh"
-        ["${bin_dir}/hamster-tmux-setup"]="${install_dir}/config/tmux/setup.sh"
-    )
+    declare -A copy_cmds=( [cs]=bin/cs [nt]=bin/nt )
+    declare -A wrap_cmds=( [hamster-tmux]=config/tmux/tmux.sh )
 
     mkdir -p "$bin_dir" 2>/dev/null || true
 
-    for dest in "${!files[@]}"; do
-        src="${files[$dest]}"
+    for name in "${!copy_cmds[@]}"; do
+        dest="${bin_dir}/${name}"
+        src="${install_dir}/${copy_cmds[$name]}"
         if [[ ! -f "$src" ]]; then
-            missing+=("$(basename "$dest")")
+            missing+=("$name")
             continue
         fi
-        rm -f "$dest"
-        sed 's/\r$//' "$src" > "$dest" && chmod 755 "$dest" && n=$((n + 1))
+        _命令同步_复制 "$dest" "$src" && n=$((n + 1))
+    done
+
+    for name in "${!wrap_cmds[@]}"; do
+        dest="${bin_dir}/${name}"
+        script="${install_dir}/${wrap_cmds[$name]}"
+        if [[ ! -f "$script" ]]; then
+            missing+=("$name")
+            continue
+        fi
+        _命令同步_包装 "$dest" "$script" && n=$((n + 1))
     done
 
     if [[ ${#missing[@]} -gt 0 ]]; then

@@ -32,3 +32,19 @@
 
     echo "${INSTALL_DIR:-/cs}"
 }
+
+仓鼠_工作目录() {
+    local root="${1:-${HAMSTER_ROOT:-${INSTALL_DIR:-/cs}}}"
+    local wd="${HAMSTER_WORK_DIR:-}" f
+
+    [[ -n "$wd" ]] && { echo "$wd"; return; }
+
+    for f in /etc/hamster-scripts/config.yaml "${root}/config/config.yaml"; do
+        [[ -f "$f" ]] || continue
+        wd=$(grep -E '^[[:space:]]*work_dir:' "$f" 2>/dev/null | head -1 \
+            | sed -E 's/^[^:]*:[[:space:]]*//; s/^["'\'' ]+//; s/["'\'' ]+$//')
+        [[ -n "$wd" ]] && { echo "$wd"; return; }
+    done
+
+    echo "$root"
+}

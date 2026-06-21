@@ -10,11 +10,6 @@ TMUX_CONF="${TMUX_HOME}/.tmux/main.conf"
 export HAMSTER_TMUX_CONF="$TMUX_CONF"
 read -ra HAMSTER_TMUX_WINDOWS <<< "${HAMSTER_TMUX_WINDOW_NAMES:-甲 乙}"
 
-WORK_DIR="${HAMSTER_WORK_DIR:-}"
-if [[ -z "$WORK_DIR" && -f /etc/hamster-scripts/config.yaml ]]; then
-    WORK_DIR=$(grep -E '^work_dir:' /etc/hamster-scripts/config.yaml 2>/dev/null | awk '{print $2}')
-fi
-WORK_DIR="${WORK_DIR:-$INSTALL_DIR}"
 mkdir -p "$WORK_DIR"
 
 _Tmux重载配置() {
@@ -62,7 +57,7 @@ _Tmux进入() {
         echo "[hamster-tmux] 未安装，请运行 hamster-tmux --setup" >&2
         exit 1
     }
-    Tmux_配置就绪 "$TMUX_HOME" || Tmux_链接配置 "$INSTALL_DIR" || {
+    Tmux_配置就绪 "$TMUX_HOME" || Tmux_链接配置 || {
         echo "[hamster-tmux] 配置未就绪，请运行 hamster-tmux --setup" >&2
         exit 1
     }
