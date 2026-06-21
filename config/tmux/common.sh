@@ -3,23 +3,24 @@
 
 Tmux_引导() {
     local script="${1:-${BASH_SOURCE[1]:-${BASH_SOURCE[0]}}}"
+    local root_lib dir
 
     if [[ -n "${HAMSTER_ROOT:-}" && -f "${HAMSTER_ROOT}/lib/root.sh" ]]; then
-        INSTALL_DIR="$HAMSTER_ROOT"
-        export HAMSTER_ROOT="$INSTALL_DIR"
-        return 0
+        root_lib="${HAMSTER_ROOT}/lib/root.sh"
+    elif dir="$(cd "$(dirname "$script")" 2>/dev/null && pwd)" && [[ -f "$dir/../../lib/root.sh" ]]; then
+        root_lib="$(cd "$dir/../.." && pwd)/lib/root.sh"
+    elif [[ -f /cs/lib/root.sh ]]; then
+        root_lib="/cs/lib/root.sh"
     fi
 
-    local _root_lib=""
-    for _p in "$(cd "$(dirname "$script")" && pwd)/../../lib/root.sh" "/cs/lib/root.sh"; do
-        [[ -f "$_p" ]] && { _root_lib="$_p"; break; }
-    done
-    [[ -z "$_root_lib" ]] && { echo "错误：未找到 Hamster 安装目录（/cs）" >&2; return 1; }
+    [[ -n "$root_lib" ]] || { echo "错误：未找到 Hamster 安装目录" >&2; return 1; }
 
     # shellcheck source=/dev/null
-    source "$_root_lib"
+    source "$root_lib"
     INSTALL_DIR="$(仓鼠_安装根 "$script")"
     export HAMSTER_ROOT="$INSTALL_DIR"
+    WORK_DIR="$(仓鼠_工作目录 "$INSTALL_DIR")"
+    export WORK_DIR
 }
 
 Tmux_用户主目录() {
