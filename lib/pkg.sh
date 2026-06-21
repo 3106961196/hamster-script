@@ -906,11 +906,8 @@ _包管理_安装Pnpm() {
 }
 
 包管理_确保Redis() {
-    if 包管理_Redis已安装; then
-        日志信息 "Redis 已安装"
-    else
-        日志信息 "正在安装 Redis..."
-        包管理_安装 "redis" || 包管理_安装 "redis-server"
+    if ! 包管理_Redis已安装; then
+        _包管理_安装重试 redis-server || _包管理_安装重试 redis || return 1
     fi
 
     if 包管理_Redis运行中; then
