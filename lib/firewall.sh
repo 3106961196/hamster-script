@@ -141,36 +141,3 @@
             ;;
     esac
 }
-
-# 关闭端口
-防火墙_关闭端口() {
-    local port="$1"
-    local protocol="${2:-tcp}"
-    local fw_type
-    fw_type=$(防火墙_获取类型)
-    
-    if [[ -z "$port" ]]; then
-        日志错误 "端口号不能为空"
-        return 1
-    fi
-    
-    case "$fw_type" in
-        ufw)
-            ufw delete allow "$port/$protocol"
-            日志成功 "已关闭端口 $port/$protocol"
-            ;;
-        firewalld)
-            firewall-cmd --permanent --remove-port="$port/$protocol"
-            firewall-cmd --reload
-            日志成功 "已关闭端口 $port/$protocol"
-            ;;
-        iptables)
-            iptables -D INPUT -p "$protocol" --dport "$port" -j ACCEPT
-            日志成功 "已关闭端口 $port/$protocol"
-            ;;
-        *)
-            日志错误 "未检测到防火墙"
-            return 1
-            ;;
-    esac
-}

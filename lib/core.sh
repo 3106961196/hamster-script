@@ -12,17 +12,27 @@ PROJECT_AUTHOR="CS"
         echo "$PROJECT_ROOT"
         return 0
     fi
-    
+
     local script_path="${BASH_SOURCE[0]}"
     local dir
     dir="$(cd "$(dirname "$script_path")/.." && pwd)"
+    if [[ -f "$dir/lib/core.sh" ]]; then
+        echo "$dir"
+        return 0
+    fi
+
+    if [[ -n "${HAMSTER_ROOT:-}" && -f "${HAMSTER_ROOT}/lib/core.sh" ]]; then
+        echo "$HAMSTER_ROOT"
+        return 0
+    fi
+
     echo "$dir"
 }
 
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
     PROJECT_ROOT="$(获取项目根目录)"
 fi
-export PROJECT_ROOT PROJECT_NAME PROJECT_VERSION PROJECT_AUTHOR
+export PROJECT_ROOT HAMSTER_ROOT="${HAMSTER_ROOT:-$PROJECT_ROOT}" PROJECT_NAME PROJECT_VERSION PROJECT_AUTHOR
 
 # 目录定义
 LIB_DIR="$PROJECT_ROOT/lib"
@@ -58,7 +68,7 @@ declare -A CONFIG
 
 # 加载所有库
 加载全部库() {
-    local libs=("log" "config" "ui" "pkg" "sys" "service" "firewall" "net" "tool")
+    local libs=("log" "config" "ui" "pkg" "chromium" "github" "sys" "service" "firewall" "net" "tool" "bootstrap" "tool_entry")
     for lib in "${libs[@]}"; do
         加载库 "$lib"
     done
@@ -83,48 +93,6 @@ declare -A CONFIG
     command -v "$1" &>/dev/null
 }
 
-文件存在() {
-    [[ -f "$1" ]]
-}
-
-目录存在() {
-    [[ -d "$1" ]]
-}
-
 确保目录() {
     [[ ! -d "$1" ]] && mkdir -p "$1"
-}
-
-是否Root() {
-    [[ $EUID -eq 0 ]]
-}
-
-去空白() {
-    local var="$1"
-    var="${var#"${var%%[![:space:]]*}"}"
-    var="${var%"${var##*[![:space:]]}"}"
-    echo "$var"
-}
-
-随机字符串() {
-    local length="${1:-8}"
-    tr -dc 'a-zA-Z0-9' </dev/urandom | head -c "$length"
-}
-
-清理临时目录() {
-    local temp_dir="/tmp/${PROJECT_NAME}"
-    if [[ -d "$temp_dir" ]]; then
-        rm -rf "$temp_dir"/* 2>/dev/null || true
-    fi
-}
-
-添加退出陷阱() {
-    local handler="$1"
-    local existing_handler
-    existing_handler=$(trap -p EXIT | sed "s/^trap -- '\(.*\)' EXIT$/\1/")
-    if [[ -n "$existing_handler" ]]; then
-        trap "$existing_handler; $handler" EXIT
-    else
-        trap "$handler" EXIT
-    fi
 }

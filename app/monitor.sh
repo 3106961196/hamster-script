@@ -20,9 +20,10 @@
 }
 
 监控_概览() {
-    界面信息 "正在获取系统概览..."
-    
     local content
+
+    界面清屏
+    printf '正在获取系统概览...\n\n' >&2
     content=$({
         echo "🖥️  系统: $(grep PRETTY_NAME  /etc/os-release 2>/dev/null | cut -d'"' -f2 || uname -a)"
         echo "📅  时间: $(date '+%Y-%m-%d %H:%M:%S')"
@@ -42,7 +43,8 @@
         echo "    本地 IP: $(网络_获取本地IP 2>/dev/null || echo 'N/A')"
         echo "    公网 IP: $(网络_获取公网IP 2>/dev/null || echo 'N/A')"
     })
-    
+    界面清屏
+
     界面文本 "$content" "📊 系统概览"
 }
 
@@ -130,8 +132,9 @@
     local action
     action=$(界面动作 "📊 进程 $selected" \
         "kill" "终止进程" \
-        "info" "查看详情" \
-        "cancel" "返回")
+        "info" "查看详情")
+    
+    界面已取消 "$action" && return
     
     case "$action" in
         kill)

@@ -7,4 +7,5 @@ temp_dir: /tmp/hamster-scripts
 config_dir: /etc/hamster-scripts
 data_dir: /var/lib/hamster-scripts
 install_dir: /cs
-work_dir: /root/cs
+work_dir: /cs
+node_min_major: 26

@@ -128,9 +128,14 @@ _CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir w
     获取配置 "install_dir" "/cs"
 }
 
-# 获取工作目录
+# 获取工作目录（项目/工具安装根；默认与 install_dir 一致）
 获取工作目录() {
-    获取配置 "work_dir" "/root/cs"
+    local wd
+    wd=$(获取配置 "work_dir" "")
+    if [[ -z "$wd" ]]; then
+        wd=$(获取配置 "install_dir" "/cs")
+    fi
+    echo "$wd"
 }
 
 # 设置配置值

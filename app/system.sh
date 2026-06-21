@@ -32,11 +32,13 @@
 }
 
 系统管理_信息() {
-    界面信息 "正在获取系统信息..."
-    
     local info
+
+    界面清屏
+    printf '正在获取系统信息...\n\n' >&2
     info=$(系统_获取信息 2>/dev/null)
-    
+    界面清屏
+
     界面文本 "$info" "🖥️ 系统信息"
 }
 
@@ -44,9 +46,8 @@
     if ! 界面确认 "确定要更新系统吗？"; then
         return
     fi
-    
-    界面信息 "正在更新系统..."
-    
+
+    界面清屏
     {
         echo "=== 更新软件源 ==="
         包管理_更新源
@@ -83,9 +84,8 @@
     if ! 界面确认 "确定要优化系统吗？\n\n将执行:\n- 清理包缓存\n- 移除无用包\n- 清理日志 (7天前)\n- 清理临时文件"; then
         return
     fi
-    
-    界面信息 "正在优化系统..."
-    
+
+    界面清屏
     {
         echo "=== 清理包缓存 ==="
         包管理_清理
@@ -112,9 +112,8 @@
         "temp" "清理临时文件")
     
     [[ -z "$items" ]] && return
-    
-    界面信息 "正在清理..."
-    
+
+    界面清屏
     {
         for item in $items; do
             case "$item" in
@@ -143,8 +142,9 @@
 }
 
 系统管理_服务菜单() {
-    界面信息 "正在获取服务列表..."
-    
+    界面清屏
+    printf '正在获取服务列表...\n\n' >&2
+
     local items=()
     
     if 服务_是否Systemd; then
@@ -181,7 +181,9 @@
         界面消息 "无法获取服务列表" "错误"
         return
     fi
-    
+
+    界面清屏
+
     local selected
     selected=$(界面选择 "🔧 服务管理" "选择服务:" "${items[@]}")
     
@@ -228,21 +230,20 @@
     local action
     action=$(界面动作 "🔧 $service ($status_text)" "${actions[@]}")
     
+    界面已取消 "$action" && return
+    
     case "$action" in
         start)
-            界面信息 "正在启动 $service..."
-            服务_启动 "$service" && 界面成功 "$service 已启动" || 界面错误 "启动失败"
+            界面任务 "正在启动 $service..." 服务_启动 "$service" && 界面成功 "$service 已启动" || 界面错误 "启动失败"
             ;;
         stop)
             if 界面确认 "确定要停止 $service 吗？"; then
-                界面信息 "正在停止 $service..."
-                服务_停止 "$service" && 界面成功 "$service 已停止" || 界面错误 "停止失败"
+                界面任务 "正在停止 $service..." 服务_停止 "$service" && 界面成功 "$service 已停止" || 界面错误 "停止失败"
             fi
             ;;
         restart)
             if 界面确认 "确定要重启 $service 吗？"; then
-                界面信息 "正在重启 $service..."
-                服务_重启 "$service" && 界面成功 "$service 已重启" || 界面错误 "重启失败"
+                界面任务 "正在重启 $service..." 服务_重启 "$service" && 界面成功 "$service 已重启" || 界面错误 "重启失败"
             fi
             ;;
         status)
@@ -260,12 +261,10 @@
             界面文本 "$logs" "📋 $service 日志"
             ;;
         enable)
-            界面信息 "正在启用 $service 开机自启..."
-            systemctl enable "$service" 2>/dev/null && 界面成功 "已启用开机自启" || 界面错误 "启用失败"
+            界面任务 "正在启用 $service 开机自启..." bash -c "systemctl enable \"$service\" 2>/dev/null" && 界面成功 "已启用开机自启" || 界面错误 "启用失败"
             ;;
         disable)
-            界面信息 "正在禁用 $service 开机自启..."
-            systemctl disable "$service" 2>/dev/null && 界面成功 "已禁用开机自启" || 界面错误 "禁用失败"
+            界面任务 "正在禁用 $service 开机自启..." bash -c "systemctl disable \"$service\" 2>/dev/null" && 界面成功 "已禁用开机自启" || 界面错误 "禁用失败"
             ;;
     esac
 }
@@ -299,15 +298,13 @@
 
 系统管理_防火墙启用() {
     if 界面确认 "确定要启用防火墙吗？"; then
-        界面信息 "正在启用防火墙..."
-        防火墙_启用 2>&1 && 界面成功 "防火墙已启用" || 界面错误 "启用失败"
+        界面任务 "正在启用防火墙..." 防火墙_启用 && 界面成功 "防火墙已启用" || 界面错误 "启用失败"
     fi
 }
 
 系统管理_防火墙禁用() {
     if 界面确认 "确定要禁用防火墙吗？\n这可能会降低系统安全性"; then
-        界面信息 "正在禁用防火墙..."
-        防火墙_禁用 2>&1 && 界面成功 "防火墙已禁用" || 界面错误 "禁用失败"
+        界面任务 "正在禁用防火墙..." 防火墙_禁用 && 界面成功 "防火墙已禁用" || 界面错误 "禁用失败"
     fi
 }
 
@@ -323,15 +320,14 @@
     fi
     
     if 界面确认 "确定要开放端口 $port 吗？"; then
-        界面信息 "正在开放端口 $port..."
-        防火墙_开放端口 "$port" 2>&1 && 界面成功 "端口 $port 已开放" || 界面错误 "开放失败"
+        界面任务 "正在开放端口 $port..." 防火墙_开放端口 "$port" && 界面成功 "端口 $port 已开放" || 界面错误 "开放失败"
     fi
 }
 
 系统管理_安全检查() {
-    界面信息 "正在进行安全检查..."
-    
     local result
+
+    界面清屏
     result=$({
         echo "=== SSH 配置 ==="
         if [[ -f /etc/ssh/sshd_config ]]; then
@@ -356,7 +352,8 @@
         echo "=== 失败登录尝试 ==="
         lastb -n 5 2>/dev/null || echo "无记录"
     })
-    
+    界面清屏
+
     界面文本 "$result" "🔒 安全检查"
 }
 
@@ -408,18 +405,15 @@
     
     [[ -z "$selected" ]] && return
     
-    界面信息 "正在设置时区为 $selected..."
-    timedatectl set-timezone "$selected" 2>/dev/null && 界面成功 "时区已设置为 $selected" || 界面错误 "设置失败"
+    界面任务 "正在设置时区为 $selected..." bash -c "timedatectl set-timezone \"$selected\" 2>/dev/null" && 界面成功 "时区已设置为 $selected" || 界面错误 "设置失败"
 }
 
 系统管理_同步时间() {
-    界面信息 "正在同步时间..."
-    
-    if command -v timedatectl &>/dev/null; then
-        timedatectl set-ntp true 2>/dev/null
+    if 界面任务 "正在同步时间..." bash -c 'command -v timedatectl &>/dev/null && timedatectl set-ntp true 2>/dev/null; 系统_同步时间 2>/dev/null'; then
+        界面成功 "时间同步成功"
+    else
+        界面错误 "时间同步失败"
     fi
-    
-    系统_同步时间 2>/dev/null && 界面成功 "时间同步成功" || 界面错误 "时间同步失败"
 }
 
 系统管理_用户菜单() {
@@ -458,8 +452,7 @@
         return
     fi
     
-    界面信息 "正在创建用户 $username..."
-    useradd -m -s /bin/bash "$username" 2>&1 && 界面成功 "用户 $username 创建成功" || 界面错误 "创建失败"
+    界面任务 "正在创建用户 $username..." bash -c "useradd -m -s /bin/bash \"$username\" 2>&1" && 界面成功 "用户 $username 创建成功" || 界面错误 "创建失败"
 }
 
 系统管理_删除用户() {
@@ -574,8 +567,9 @@
     action=$(界面动作 "📊 进程 $pid" \
         "kill" "终止进程" \
         "kill9" "强制终止" \
-        "info" "查看详情" \
-        "cancel" "返回")
+        "info" "查看详情")
+    
+    界面已取消 "$action" && return
     
     case "$action" in
         kill)
@@ -630,9 +624,11 @@
         return
     fi
     
-    界面信息 "正在分析目录大小..."
+    界面清屏
+    printf '正在分析目录大小...\n\n' >&2
     local result
     result=$(du -sh "$path"/* 2>/dev/null | sort -hr | head -20)
+    界面清屏
     界面文本 "$result" "💾 目录大小"
 }
 
@@ -648,10 +644,12 @@
         return
     fi
     
-    界面信息 "正在搜索大文件..."
-    
+    界面清屏
+    printf '正在搜索大文件...\n\n' >&2
+
     local temp_file="${CONFIG[temp_dir]}/large_files.txt"
     find "$path" -type f -size "+$size" -exec ls -lh {} \; 2>/dev/null | head -50 > "$temp_file"
+    界面清屏
     
     if [[ ! -s "$temp_file" ]]; then
         界面消息 "未找到大于 $size 的文件" "提示"
@@ -676,8 +674,9 @@
     local action
     action=$(界面动作 "💾 $selected" \
         "delete" "删除文件" \
-        "view" "查看详情" \
-        "cancel" "返回")
+        "view" "查看详情")
+    
+    界面已取消 "$action" && return
     
     case "$action" in
         delete)
@@ -696,7 +695,8 @@
 
 系统管理_重启() {
     if 界面确认 "确定要重启系统吗？"; then
-        界面信息 "3秒后重启系统..."
+        界面清屏
+        printf '3秒后重启系统...\n' >&2
         sleep 3
         reboot
     fi

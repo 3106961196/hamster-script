@@ -2,6 +2,8 @@
 
 # 日志系统
 
+HAMSTER_LAST_ERROR="${HAMSTER_LAST_ERROR:-}"
+
 # 延迟初始化 LOG_FILE
 LOG_FILE=""
 LOG_LEVEL="${LOG_LEVEL:-INFO}"
@@ -87,8 +89,17 @@ _写入日志文件() {
     
     local color="${LOG_COLORS[$level]}"
     local reset="${LOG_COLORS[RESET]}"
-    
-    if [[ -t 1 ]]; then
+
+    if [[ "$level" == "ERROR" ]]; then
+        HAMSTER_LAST_ERROR="$message"
+    fi
+
+    if [[ -n "${HAMSTER_UI_TASK:-}" ]]; then
+        # 任务模式：进度信息也写到 /dev/tty，避免 apt 结束后长时间无输出像卡住
+        if [[ "$level" != "DEBUG" ]] && [[ -e /dev/tty ]]; then
+            echo -e "${color}${formatted}${reset}" >/dev/tty
+        fi
+    elif [[ -t 1 ]]; then
         echo -e "${color}${formatted}${reset}"
     else
         echo "$formatted"

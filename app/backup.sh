@@ -51,11 +51,9 @@
     
     local backup_path="${CONFIG[backup_dir]}"
     确保目录 "$backup_path"
-    
-    界面信息 "正在创建备份 $backup_name..."
-    
+
     local temp_log="${CONFIG[temp_dir]}/backup_create.log"
-    if tar -czf "$backup_path/${backup_name}.tar.gz" -C "$(dirname "$backup_dir")" "$(basename "$backup_dir")" 2>&1 | tee "$temp_log"; then
+    if 界面任务 "正在创建备份 $backup_name..." bash -c "tar -czf \"$backup_path/${backup_name}.tar.gz\" -C \"$(dirname "$backup_dir")\" \"$(basename "$backup_dir")\" 2>&1 | tee \"$temp_log\""; then
         local size
         size=$(du -h "$backup_path/${backup_name}.tar.gz" | cut -f1)
         界面成功 "备份创建成功\n\n文件: $backup_path/${backup_name}.tar.gz\n大小: $size"
@@ -110,6 +108,8 @@
         "view" "查看内容" \
         "delete" "删除备份")
     
+    界面已取消 "$action" && return
+    
     case "$action" in
         restore) 备份_恢复 "$file" ;;
         view) 备份_查看内容 "$file" ;;
@@ -134,10 +134,8 @@
     fi
     
     确保目录 "$restore_dir"
-    
-    界面信息 "正在恢复备份..."
-    
-    if tar -xzf "$file" -C "$restore_dir" 2>&1; then
+
+    if 界面任务 "正在恢复备份..." tar -xzf "$file" -C "$restore_dir"; then
         界面成功 "备份已恢复到 $restore_dir"
     else
         界面错误 "恢复失败"
@@ -146,11 +144,12 @@
 
 备份_查看内容() {
     local file="$1"
-    
-    界面信息 "正在读取备份内容..."
-    
     local content
+
+    界面清屏
+    printf '正在读取备份内容...\n\n' >&2
     content=$(tar -tzf "$file" 2>/dev/null | head -100)
+    界面清屏
     
     if [[ -z "$content" ]]; then
         界面消息 "无法读取备份内容" "错误"

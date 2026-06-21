@@ -7,15 +7,6 @@
     命令存在 systemctl && [[ -d /run/systemd/system ]]
 }
 
-# 列出运行中的服务
-服务_列表() {
-    if 服务_是否Systemd; then
-        systemctl list-units --type=service --state=running
-    else
-        service --status-all 2>/dev/null | grep +
-    fi
-}
-
 # 启动服务
 服务_启动() {
     local service="$1"

@@ -1,74 +1,54 @@
 #!/bin/bash
-# XRK-AGT 管理脚本（精简版）
+# XRK-AGT 管理
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PROJECT_ROOT="$(cd "$(dirname "$SCRIPT_DIR")/.." && pwd)"
-
-source "$PROJECT_ROOT/lib/core.sh"
+_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
+# shellcheck source=/dev/null
+source "$_root/lib/core.sh"
 工具引导
-
-# 加载工具配置
-source "$SCRIPT_DIR/tool.conf"
-
-# ─── 状态检测 ────────────────────────────────────────────────
+工具_加载 "${BASH_SOURCE[0]}"
 
 _XRK_是否已安装() {
     工具_是否已安装 "xrk-agt"
 }
 
-_XRK_检查依赖() {
-    # 检查并启动 Redis
-    if ! command -v redis-cli &>/dev/null || ! redis-cli ping 2>/dev/null | grep -q "PONG"; then
-        包管理_确保Redis
-    fi
-
-    # 检查并启动 MongoDB
-    if ! command -v mongosh &>/dev/null || ! mongosh --eval "db.runCommand({ping:1})" --quiet 2>/dev/null; then
-        包管理_确保MongoDB
-    fi
-
-    # 检查并安装 Chromium
-    包管理_确保Chromium
-}
-
 _XRK_启动服务() {
     if ! _XRK_是否已安装; then
-        界面消息 "XRK-AGT 未安装，请先安装" "错误"
+        界面警告 "XRK-AGT 未安装\n请先安装"
         return 1
     fi
 
-    _XRK_检查依赖
+    工具_安装依赖 "xrk-agt" || return 1
 
     cd "$TOOL_INSTALL_DIR"
-    界面信息 "正在启动 XRK-AGT..."
+    界面清屏
     node app.js
 }
 
 _XRK_启动调试() {
     if ! _XRK_是否已安装; then
-        界面消息 "XRK-AGT 未安装，请先安装" "错误"
+        界面警告 "XRK-AGT 未安装\n请先安装"
         return 1
     fi
 
-    _XRK_检查依赖
+    工具_安装依赖 "xrk-agt" || return 1
 
     cd "$TOOL_INSTALL_DIR"
-    界面信息 "正在以 Debug 模式启动 XRK-AGT..."
+    界面清屏
     node debug.js
 }
 
 _XRK_重装项目() {
     if ! _XRK_是否已安装; then
-        界面消息 "XRK-AGT 未安装，请先使用安装功能" "错误"
+        界面警告 "XRK-AGT 未安装\n请先安装"
         return 1
     fi
 
-    if ! 界面确认 "重装 XRK-AGT 将会:\n1. 拉取最新代码\n2. 重新安装依赖\n\n确定继续？"; then
+    if ! 界面确认 "重装 XRK-AGT 将：\n\n· 拉取最新代码\n· 重新安装依赖\n\n确定继续？" "重装确认"; then
         return 0
     fi
 
     工具_更新 "xrk-agt"
-    界面成功 "XRK-AGT 重装完成！请手动启动服务"
+    界面完成 "XRK-AGT 重装完成\n请手动启动服务"
 }
 
 _XRK_卸载项目() {
@@ -84,28 +64,31 @@ _XRK_卸载项目() {
     工具_卸载 "xrk-agt"
 }
 
-# ─── 交互式菜单 ──────────────────────────────────────────────
-
 XRK_管理() {
+    UI_BACKTITLE="XRK-AGT · ${UI_BACKTITLE:-Hamster Script}"
     while true; do
-        local choice
-        choice=$(界面子菜单 "📁 XRK-AGT 管理" "请选择操作:" \
-            "1" "🚀 启动 XRK-AGT" \
-            "2" "🐛 Debug 启动 XRK-AGT" \
-            "3" "🔄 重装 XRK-AGT" \
-            "4" "🗑️  卸载 XRK-AGT")
+        local choice status
+        if _XRK_是否已安装; then
+            status="状态: 已安装"
+        else
+            status="状态: 未安装"
+        fi
+
+        choice=$(界面子菜单 "XRK-AGT 管理" "${status}\n\n请选择操作:" \
+            "1" "启动服务" \
+            "2" "Debug 启动" \
+            "3" "重装项目" \
+            "4" "卸载项目")
 
         case "$choice" in
             1) _XRK_启动服务 ;;
             2) _XRK_启动调试 ;;
             3) _XRK_重装项目 ;;
             4) _XRK_卸载项目 && exit 0 ;;
-            b) exit 0;;
+            b|"") exit 0 ;;
         esac
     done
 }
-
-# ─── 入口 ─────────────────────────────────────────────────────
 
 if [ "$1" == "--auto" ]; then
     case "$2" in
