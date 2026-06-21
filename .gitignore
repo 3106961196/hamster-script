@@ -40,7 +40,6 @@ log/
 
 # Hamster 安装/运行产物（勿提交）
 .tmux-home/
-/tmp/xrk-agt.pid
 /tmp/mongodb/
 /tmp/mongolog/
 
