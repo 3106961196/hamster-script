@@ -31,6 +31,25 @@ _拉取仓库() {
     echo "$INSTALL_DIR"
 }
 
+_安装前引导() {
+    local choice pkg_manager
+
+    pkg_manager=$(包管理_获取管理器 2>/dev/null || echo unknown)
+    [[ "$pkg_manager" != "apt" ]] && return 0
+
+    echo ""
+    echo "安装前可选步骤："
+    echo "  1) 使用 linuxmirrors 换源"
+    echo "  2) 跳过，直接安装"
+    read -rp "请选择 [1/2]: " choice
+    case "$choice" in
+        1)
+            echo "正在启动 linuxmirrors..."
+            包管理_Linux换源 || echo "换源未完成" >&2
+            ;;
+    esac
+}
+
 程序入口() {
     local repo_root
 
@@ -51,8 +70,12 @@ _拉取仓库() {
     # shellcheck source=/dev/null
     source "$repo_root/lib/core.sh"
     工具引导
+    _安装前引导
 
-    包管理_批量安装 git wget curl tar xz-utils jq sudo tmux dialog || true
+    if ! 包管理_批量安装 git wget curl tar xz-utils jq sudo tmux dialog; then
+        echo ""
+        echo "警告: 部分依赖未安装成功。可重新运行 setup.sh 并选择 1 换源后再试" >&2
+    fi
     安装_系统目录 "$repo_root"
     安装_后处理 "$repo_root"
 

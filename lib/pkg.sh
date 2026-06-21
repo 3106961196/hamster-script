@@ -1,43 +1,10 @@
 #!/bin/bash
 
-# ─── 镜像源配置（不影响系统配置） ─────────────────────────────
+# ─── 镜像源配置 ─────────────────────────────────────────────
 NPM_REGISTRY="${NPM_REGISTRY:-https://registry.npmmirror.com}"
-APT_MIRROR="${APT_MIRROR:-https://mirrors.aliyun.com}"
 LINUXMIRROR_URL="${LINUXMIRROR_URL:-https://linuxmirrors.cn/main.sh}"
 
 _INSTALL_MAX_RETRIES=3
-
-# ─── 内部辅助函数 ─────────────────────────────────────────────
-
-# 带镜像源的 apt 安装
-_Apt安装() {
-    local packages=("$@")
-    local temp_conf
-    temp_conf=$(mktemp)
-    local distro_id codename mirror_path
-    
-    if [[ -f /etc/os-release ]]; then
-        source /etc/os-release
-        distro_id="${ID:-ubuntu}"
-        codename="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null)}"
-    else
-        distro_id="ubuntu"
-        codename="$(lsb_release -cs 2>/dev/null || echo jammy)"
-    fi
-    
-    case "$distro_id" in
-        debian) mirror_path="debian" ;;
-        *) mirror_path="ubuntu" ;;
-    esac
-    
-    cat > "$temp_conf" << EOF
-deb ${APT_MIRROR}/${mirror_path}/ ${codename} main restricted
-deb ${APT_MIRROR}/${mirror_path}/ ${codename}-updates main restricted
-EOF
-    
-    apt -o Dir::Etc::SourceList="$temp_conf" install -y "${packages[@]}"
-    rm -f "$temp_conf"
-}
 
 # ─── 包管理器检测 ─────────────────────────────────────────────
 
@@ -149,9 +116,10 @@ EOF
     日志信息 "软件源索引已更新，继续后续步骤..."
 }
 
-# 交互式更换 Debian/Ubuntu apt 镜像（linuxmirrors.cn，同 xrk change_source_linux）
+# 交互式更换 Debian/Ubuntu apt 镜像（linuxmirrors.cn）
 包管理_Linux换源() {
     local pkg_manager
+
     [[ $EUID -eq 0 ]] || { 日志错误 "换源需要 root 权限（sudo cs）"; return 1; }
 
     pkg_manager=$(包管理_获取管理器)
@@ -160,8 +128,14 @@ EOF
         return 1
     fi
 
-    包管理_确保命令 curl curl || return 1
-    bash <(curl -fsSL --connect-timeout 15 --max-time 120 "$LINUXMIRROR_URL")
+    if command -v curl &>/dev/null; then
+        bash <(curl -fsSL --connect-timeout 15 --max-time 120 "$LINUXMIRROR_URL")
+    elif command -v wget &>/dev/null; then
+        bash <(wget -qO- --timeout=15 "$LINUXMIRROR_URL")
+    else
+        日志错误 "换源需要 curl 或 wget"
+        return 1
+    fi
 }
 
 # npm/pnpm 换国内镜像
@@ -364,8 +338,11 @@ _包管理_安装重试() {
             apt)
                 DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
                     apt-get update -qq 2>/dev/null || true
-                DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-                    _Apt安装 "$package" && { 日志成功 "$package 安装成功"; return 0; }
+                if DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+                    apt-get install -y "$package" && 包管理_是否已安装 "$package"; then
+                    日志成功 "$package 安装成功"
+                    return 0
+                fi
                 ;;
             yum) yum install -y "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
             pacman) pacman --disable-sandbox -Sy --noconfirm "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
@@ -658,14 +635,11 @@ _包管理_安装重试() {
     for pkg in "${packages[@]}"; do
         if 包管理_是否已安装 "$pkg"; then
             日志信息 "$pkg 已安装"
+        elif 包管理_安装 "$pkg"; then
+            :
         else
-            日志信息 "正在安装 $pkg..."
-            if 包管理_安装 "$pkg"; then
-                日志成功 "$pkg 安装成功"
-            else
-                日志错误 "$pkg 安装失败"
-                failed+=("$pkg")
-            fi
+            日志错误 "$pkg 安装失败"
+            failed+=("$pkg")
         fi
     done
     
