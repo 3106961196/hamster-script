@@ -80,7 +80,16 @@ _安装前引导() {
     安装_后处理 "$repo_root"
 
     echo ""
-    echo "安装完成。运行: cs"
+    echo "安装完成。"
+    echo ""
+
+    # 自动进入 tmux 桌面
+    if command -v hamster-tmux &>/dev/null; then
+        echo "正在进入 tmux 桌面..."
+        exec hamster-tmux
+    else
+        echo "运行: cs"
+    fi
 }
 
 程序入口 "$@"
