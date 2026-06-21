@@ -52,7 +52,10 @@ _拉取仓库() {
     source "$repo_root/lib/core.sh"
     工具引导
 
-    包管理_批量安装 git wget curl tar xz-utils jq sudo tmux dialog || true
+    if ! 包管理_批量安装 git wget curl tar xz-utils jq sudo tmux dialog; then
+        echo ""
+        echo "警告: 部分依赖未安装成功。可换源后重试: bash setup.sh 或 cs 内换源" >&2
+    fi
     安装_系统目录 "$repo_root"
     安装_后处理 "$repo_root"
 

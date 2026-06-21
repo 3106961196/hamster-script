@@ -9,34 +9,74 @@ _INSTALL_MAX_RETRIES=3
 
 # ─── 内部辅助函数 ─────────────────────────────────────────────
 
-# 带镜像源的 apt 安装
+# 解析 Debian/Ubuntu 发行版代号
+_Apt解析代号() {
+    local codename=""
+
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        codename="${VERSION_CODENAME:-${UBUNTU_CODENAME:-}}"
+    fi
+    [[ -z "$codename" ]] && codename="$(lsb_release -cs 2>/dev/null || true)"
+    if [[ -z "$codename" && -f /etc/apt/sources.list ]]; then
+        codename=$(grep -E '^deb[[:space:]]' /etc/apt/sources.list 2>/dev/null | head -1 | awk '{print $3}')
+    fi
+    echo "$codename"
+}
+
+# 带镜像源的 apt 安装（临时 sources，不改系统配置）
 _Apt安装() {
     local packages=("$@")
-    local temp_conf
-    temp_conf=$(mktemp)
-    local distro_id codename mirror_path
-    
+    local temp_conf rc=0
+    local distro_id codename
+
     if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
         source /etc/os-release
         distro_id="${ID:-ubuntu}"
-        codename="${VERSION_CODENAME:-$(lsb_release -cs 2>/dev/null)}"
     else
         distro_id="ubuntu"
-        codename="$(lsb_release -cs 2>/dev/null || echo jammy)"
     fi
-    
+    codename="$(_Apt解析代号)"
+    [[ -z "$codename" ]] && { 日志错误 "无法识别系统发行版代号"; return 1; }
+
+    temp_conf=$(mktemp)
+    local -a apt_opts=(
+        -o "Dir::Etc::sourcelist=${temp_conf}"
+        -o Dir::Etc::sourceparts=-
+        -o APT::Get::List-Cleanup=0
+    )
+
     case "$distro_id" in
-        debian) mirror_path="debian" ;;
-        *) mirror_path="ubuntu" ;;
-    esac
-    
-    cat > "$temp_conf" << EOF
-deb ${APT_MIRROR}/${mirror_path}/ ${codename} main restricted
-deb ${APT_MIRROR}/${mirror_path}/ ${codename}-updates main restricted
+        debian)
+            cat > "$temp_conf" << EOF
+deb ${APT_MIRROR}/debian ${codename} main contrib non-free
+deb ${APT_MIRROR}/debian-security ${codename}-security main contrib non-free
+deb ${APT_MIRROR}/debian ${codename}-updates main contrib non-free
 EOF
-    
-    apt -o Dir::Etc::SourceList="$temp_conf" install -y "${packages[@]}"
+            ;;
+        *)
+            cat > "$temp_conf" << EOF
+deb ${APT_MIRROR}/ubuntu ${codename} main restricted universe multiverse
+deb ${APT_MIRROR}/ubuntu ${codename}-updates main restricted universe multiverse
+deb ${APT_MIRROR}/ubuntu ${codename}-security main restricted universe multiverse
+EOF
+            ;;
+    esac
+
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+        apt-get "${apt_opts[@]}" update -qq 2>/dev/null || true
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+        apt-get "${apt_opts[@]}" install -y "${packages[@]}" || rc=$?
     rm -f "$temp_conf"
+    return "$rc"
+}
+
+# 使用系统已配置的 apt 源安装
+_Apt系统安装() {
+    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+        apt-get install -y "$@"
 }
 
 # ─── 包管理器检测 ─────────────────────────────────────────────
@@ -364,8 +404,9 @@ _包管理_安装重试() {
             apt)
                 DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
                     apt-get update -qq 2>/dev/null || true
-                DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
-                    _Apt安装 "$package" && { 日志成功 "$package 安装成功"; return 0; }
+                if _Apt安装 "$package" || _Apt系统安装 "$package"; then
+                    包管理_是否已安装 "$package" && { 日志成功 "$package 安装成功"; return 0; }
+                fi
                 ;;
             yum) yum install -y "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
             pacman) pacman --disable-sandbox -Sy --noconfirm "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
@@ -658,14 +699,11 @@ _包管理_安装重试() {
     for pkg in "${packages[@]}"; do
         if 包管理_是否已安装 "$pkg"; then
             日志信息 "$pkg 已安装"
+        elif 包管理_安装 "$pkg"; then
+            :
         else
-            日志信息 "正在安装 $pkg..."
-            if 包管理_安装 "$pkg"; then
-                日志成功 "$pkg 安装成功"
-            else
-                日志错误 "$pkg 安装失败"
-                failed+=("$pkg")
-            fi
+            日志错误 "$pkg 安装失败"
+            failed+=("$pkg")
         fi
     done
     
