@@ -4,6 +4,55 @@ REPO_URL="${REPO_URL:-https://github.com/3106961196/hamster-script.git}"
 REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
+# GitHub 代理列表（国内加速）
+_GITHUB_PROXIES=(
+    "https://gh-proxy.com"
+    "https://ghfast.top"
+    "https://mirror.ghproxy.com"
+    "https://ghp.ci"
+    "https://gitclone.com/github.com"
+)
+
+# 检测是否国内（时区判断，不依赖网络）
+_是否国内() {
+    local tz="${TZ:-}"
+    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || echo "")
+    case "$tz" in
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
+        |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
+    esac
+    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
+        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
+}
+
+# 代理化 GitHub URL
+_代理化GitHub() {
+    local proxy="$1" url="$2"
+    case "$proxy" in
+        https://gitclone.com/github.com)
+            echo "${proxy}/${url#https://github.com/}"
+            ;;
+        *)
+            echo "${proxy}/${url}"
+            ;;
+    esac
+}
+
+# 尝试用代理克隆
+_代理克隆() {
+    local url="$1" dest="$2" proxy
+    echo "[setup] 检测到国内网络，尝试 GitHub 代理..."
+    for proxy in "${_GITHUB_PROXIES[@]}"; do
+        local proxied="$(_代理化GitHub "$proxy" "$url")"
+        echo "[setup] 尝试: ${proxy#https://}"
+        if timeout 60 git clone --depth 1 -b "$REPO_BRANCH" "$proxied" "$dest" 2>/dev/null; then
+            echo "[setup] ✓ 代理克隆成功: ${proxy#https://}"
+            return 0
+        fi
+    done
+    return 1
+}
+
 _仓库根路径() {
     local script_path="${BASH_SOURCE[0]:-$0}"
     local dir=""
@@ -21,14 +70,35 @@ _拉取仓库() {
         # git reset 会往 stdout 打印 "HEAD is now at ..."，不能污染 $() 捕获的路径
         git fetch origin >/dev/null 2>&1 || true
         git reset --hard "origin/${REPO_BRANCH}" >/dev/null 2>&1 || true
-        git clean -f -d >/dev/null 2>&1 || true
+        git clean -f -d >/dev/null 2>/dev/null || true
         echo "$INSTALL_DIR"
         return 0
     fi
 
     rm -rf "$INSTALL_DIR"
-    git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" || return 1
-    echo "$INSTALL_DIR"
+    
+    # 国内环境优先使用代理
+    if _是否国内; then
+        echo "[setup] 检测到国内环境，使用 GitHub 代理加速..."
+        if _代理克隆 "$REPO_URL" "$INSTALL_DIR"; then
+            echo "$INSTALL_DIR"
+            return 0
+        fi
+        echo "[setup] 代理克隆失败，尝试直连 GitHub..."
+    fi
+    
+    # 直连或代理失败后回退
+    if timeout 120 git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>&1; then
+        echo "$INSTALL_DIR"
+        return 0
+    fi
+    
+    echo "[setup] ✗ 克隆失败"
+    echo "[setup] 建议："
+    echo "  1. 检查网络连接"
+    echo "  2. 手动设置代理: export https_proxy=http://your-proxy:port"
+    echo "  3. 或手动克隆后运行: git clone $REPO_URL $INSTALL_DIR && cd $INSTALL_DIR && sudo ./setup.sh"
+    return 1
 }
 
 _安装前引导() {
