@@ -26,30 +26,31 @@ _网络_准备下载器() {
 }
 
 _网络_下载一次() {
-    local url="$1" out="$2" progress
+    local url="$1" out="$2" progress max_time="${HAMSTER_DL_MAX_TIME:-900}"
     progress=$(_网络_下载进度目标)
     if 命令存在 curl; then
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
-            curl -fsSL --connect-timeout 10 --max-time 300 -o "$out" "$url" 2>/dev/null
+            curl -fsSL --connect-timeout 15 --max-time "$max_time" -o "$out" "$url" 2>/dev/null
         else
-            curl -fL --progress-bar --connect-timeout 10 --max-time 300 -o "$out" "$url" 2>"$progress"
+            curl -fL --progress-bar --connect-timeout 15 --max-time "$max_time" -o "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
     if 命令存在 wget; then
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
-            wget -q --tries=3 --timeout=30 -O "$out" "$url" 2>/dev/null
+            wget -q --tries=3 --timeout=60 -O "$out" "$url" 2>/dev/null
         else
-            wget --tries=3 --timeout=30 --show-progress -O "$out" "$url" 2>"$progress"
+            wget --tries=3 --timeout=60 --show-progress -O "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
     return 127
 }
 
-# 统一下载：自动加速(getgh)、失败重试、临时文件落盘
+# 统一下载：GitHub 自动加速与多镜像回退、失败重试、临时文件落盘
 网络_下载() {
-    local url="$1" out="$2" tries="${3:-3}" i tmp dir name size dl_url="$url"
+    local url="$1" out="$2" tries="${3:-3}" i tmp dir name size dl_url
+    local -a candidates=()
 
     [[ -z "$url" || -z "$out" ]] && return 1
     _网络_准备下载器 || { 日志错误 "缺少 curl/wget，且自动安装失败"; return 1; }
@@ -60,27 +61,42 @@ _网络_下载一次() {
     name=$(basename "$out")
     tmp="${out}.tmp.$$"
 
-    type getgh &>/dev/null && dl_url=$(getgh "$url" 2>/dev/null || true)
-    dl_url="${dl_url:-$url}"
+    if type GitHub_下载候选 &>/dev/null; then
+        mapfile -t candidates < <(GitHub_下载候选 "$url")
+    fi
+    if [[ ${#candidates[@]} -eq 0 ]]; then
+        dl_url="$url"
+        type getgh &>/dev/null && dl_url=$(getgh "$url" 2>/dev/null || true)
+        candidates=("${dl_url:-$url}")
+    fi
 
     [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志信息 "下载 $name"
-    for ((i=1; i<=tries; i++)); do
-        rm -f "$tmp" 2>/dev/null || true
-        if _网络_下载一次 "$dl_url" "$tmp"; then
-            mv -f "$tmp" "$out" 2>/dev/null || { rm -f "$tmp" 2>/dev/null || true; return 1; }
-            if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" != "1" ]]; then
-                size=$(wc -c <"$out" 2>/dev/null | tr -d ' ')
-                [[ -n "$size" ]] && 日志成功 "$name (${size}B)" || 日志成功 "$name"
-            fi
-            return 0
-        fi
-        [[ "$i" -lt "$tries" ]] && {
-            [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志警告 "$name ($i/$tries)"
-            sleep 1
+    for dl_url in "${candidates[@]}"; do
+        [[ -z "$dl_url" ]] && continue
+        [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || {
+            case "$dl_url" in
+                https://github.com/*) ;;
+                *) 日志信息 "→ ${dl_url%%\?*}" ;;
+            esac
         }
+        for ((i=1; i<=tries; i++)); do
+            rm -f "$tmp" 2>/dev/null || true
+            if _网络_下载一次 "$dl_url" "$tmp"; then
+                mv -f "$tmp" "$out" 2>/dev/null || { rm -f "$tmp" 2>/dev/null || true; return 1; }
+                if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" != "1" ]]; then
+                    size=$(wc -c <"$out" 2>/dev/null | tr -d ' ')
+                    [[ -n "$size" ]] && 日志成功 "$name (${size}B)" || 日志成功 "$name"
+                fi
+                return 0
+            fi
+            [[ "$i" -lt "$tries" ]] && {
+                [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志警告 "$name ($i/$tries)"
+                sleep 1
+            }
+        done
     done
     rm -f "$tmp" 2>/dev/null || true
-    [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志错误 "$name 下载失败"
+    [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志错误 "$name 下载失败（已试 ${#candidates[@]} 条线路）"
     return 1
 }
 

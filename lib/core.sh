@@ -39,8 +39,8 @@ LIB_DIR="$PROJECT_ROOT/lib"
 APP_DIR="$PROJECT_ROOT/app"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 
-# 全局关联数组（必须在 加载全部库 之前声明，避免 source 在函数内导致局部作用域）
-declare -A CONFIG
+# 全局关联数组（-g：从 bin 引导函数内 source 时也必须是全局）
+declare -gA CONFIG
 
 # 加载库
 加载库() {

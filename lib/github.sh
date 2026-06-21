@@ -26,9 +26,11 @@ _是否国内区域() {
 _是否国内时区() {
     local tz="${TZ:-$(cat /etc/timezone 2>/dev/null)}"
     case "$tz" in
-        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar) return 0 ;;
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
+            |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
     esac
-    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar)'
+    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
+        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
 }
 
 网络_检测区域() {
@@ -39,13 +41,17 @@ _是否国内时区() {
     esac
 
     if 命令存在 curl; then
-        json=$(curl -s --connect-timeout 2 --max-time 4 "http://ip-api.com/json" 2>/dev/null || true)
+        json=$(curl -s --connect-timeout 4 --max-time 8 "http://ip-api.com/json" 2>/dev/null || true)
         country=$(printf '%s' "$json" | grep -oE '"countryCode":"[^"]*"' | cut -d'"' -f4)
         if [[ -n "$country" ]]; then
             [[ "$country" = "CN" ]] && { echo "cn"; return 0; }
             echo "overseas"
             return 0
         fi
+        # countryCode 解析失败时，尝试 country 字段
+        case "$json" in
+            *'"country":"China"'*) echo "cn"; return 0 ;;
+        esac
     fi
 
     _是否国内时区 && { echo "cn"; return 0; }
@@ -67,8 +73,11 @@ _代理化GitHub地址() {
 _GitHub_代理可用() {
     local proxy="$1"
     [[ -n "$proxy" ]] || return 1
-    curl -fsS --connect-timeout 2 --max-time 3 -o /dev/null \
-        "${proxy}/https://github.com" 2>/dev/null
+    # 探针失败也允许下载阶段再试（部分镜像首页 403 但 release 仍可下）
+    curl -fsS --connect-timeout 3 --max-time 5 -o /dev/null \
+        "${proxy}/https://github.com" 2>/dev/null && return 0
+    curl -fsS --connect-timeout 3 --max-time 8 -r 0-1024 -o /dev/null \
+        "${proxy}/https://github.com/NapNeko/NapCatQQ/releases/latest/download/NapCat.Shell.zip" 2>/dev/null
 }
 
 _缓存代理自克隆地址() {
@@ -257,4 +266,33 @@ GitHub_克隆() {
     echo "[git] 克隆失败（已试 ${#_GIT_TRIED[@]} 种方式）: $direct" >&2
     echo "[git] 提示: export HAMSTER_REGION=cn 后重试，或检查防火墙/DNS" >&2
     return 1
+}
+
+# GitHub 下载 URL 候选（国内：公共加速镜像 → 直连）
+GitHub_下载候选() {
+    local url="$1" direct proxy proxied u
+    local -A _seen=()
+    local -a urls=() out=()
+
+    case "$url" in
+        https://github.com/*|https://raw.githubusercontent.com/*) ;;
+        *) printf '%s\n' "$url"; return 0 ;;
+    esac
+
+    direct="$(_GitHub_清理URL "$url")"
+    [[ -z "$direct" ]] && return 1
+
+    if _是否国内区域; then
+        proxy="$(_挑选GitHub代理)"
+        [[ -n "$proxy" ]] && urls+=("$(_代理化GitHub地址 "$proxy" "$direct")")
+        for proxy in "${_GITHUB_PROXIES[@]}"; do
+            urls+=("$(_代理化GitHub地址 "$proxy" "$direct")")
+        done
+    fi
+    urls+=("$direct")
+
+    for u in "${urls[@]}"; do
+        [[ -n "$u" && -z "${_seen[$u]:-}" ]] && { _seen[$u]=1; out+=("$u"); }
+    done
+    printf '%s\n' "${out[@]}"
 }
