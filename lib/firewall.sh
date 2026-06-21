@@ -3,12 +3,12 @@
 # 防火墙管理
 
 # 获取防火墙类型
-sys_get_firewall_type() {
-    if command_exists ufw && ufw status &>/dev/null; then
+防火墙_获取类型() {
+    if 命令存在 ufw && ufw status &>/dev/null; then
         echo "ufw"
-    elif command_exists firewall-cmd && firewall-cmd --state &>/dev/null; then
+    elif 命令存在 firewall-cmd && firewall-cmd --state &>/dev/null; then
         echo "firewalld"
-    elif command_exists iptables && iptables -L &>/dev/null 2>&1; then
+    elif 命令存在 iptables && iptables -L &>/dev/null 2>&1; then
         echo "iptables"
     else
         echo "none"
@@ -16,9 +16,9 @@ sys_get_firewall_type() {
 }
 
 # 查看防火墙状态
-sys_firewall_status() {
+防火墙_状态() {
     local fw_type
-    fw_type=$(sys_get_firewall_type)
+    fw_type=$(防火墙_获取类型)
     
     case "$fw_type" in
         ufw)
@@ -45,36 +45,36 @@ sys_firewall_status() {
 }
 
 # 启用防火墙
-sys_firewall_enable() {
+防火墙_启用() {
     local fw_type
-    fw_type=$(sys_get_firewall_type)
+    fw_type=$(防火墙_获取类型)
     
     case "$fw_type" in
         ufw)
             ufw enable
-            log_success "UFW 防火墙已启用"
+            日志成功 "UFW 防火墙已启用"
             ;;
         firewalld)
             systemctl enable firewalld
             systemctl start firewalld
-            log_success "Firewalld 防火墙已启用"
+            日志成功 "Firewalld 防火墙已启用"
             ;;
         iptables)
-            log_warn "iptables 需要手动配置规则"
+            日志警告 "iptables 需要手动配置规则"
             return 1
             ;;
         *)
-            if command_exists apt; then
+            if 命令存在 apt; then
                 apt install -y ufw
                 ufw enable
-                log_success "已安装并启用 UFW"
-            elif command_exists yum; then
+                日志成功 "已安装并启用 UFW"
+            elif 命令存在 yum; then
                 yum install -y firewalld
                 systemctl enable firewalld
                 systemctl start firewalld
-                log_success "已安装并启用 Firewalld"
+                日志成功 "已安装并启用 Firewalld"
             else
-                log_error "无法自动安装防火墙"
+                日志错误 "无法自动安装防火墙"
                 return 1
             fi
             ;;
@@ -82,94 +82,94 @@ sys_firewall_enable() {
 }
 
 # 禁用防火墙
-sys_firewall_disable() {
+防火墙_禁用() {
     local fw_type
-    fw_type=$(sys_get_firewall_type)
+    fw_type=$(防火墙_获取类型)
     
     case "$fw_type" in
         ufw)
             ufw disable
-            log_success "UFW 防火墙已禁用"
+            日志成功 "UFW 防火墙已禁用"
             ;;
         firewalld)
             systemctl stop firewalld
             systemctl disable firewalld
-            log_success "Firewalld 防火墙已禁用"
+            日志成功 "Firewalld 防火墙已禁用"
             ;;
         iptables)
-            log_warn "iptables 规则清空可能影响远程连接，请手动保存规则"
+            日志警告 "iptables 规则清空可能影响远程连接，请手动保存规则"
             iptables -F
             iptables -X
-            log_success "iptables 规则已清空"
+            日志成功 "iptables 规则已清空"
             ;;
         *)
-            log_warn "未检测到防火墙"
+            日志警告 "未检测到防火墙"
             ;;
     esac
 }
 
 # 开放端口
-sys_firewall_open_port() {
+防火墙_开放端口() {
     local port="$1"
     local protocol="${2:-tcp}"
     local fw_type
-    fw_type=$(sys_get_firewall_type)
+    fw_type=$(防火墙_获取类型)
     
     if [[ -z "$port" ]]; then
-        log_error "端口号不能为空"
+        日志错误 "端口号不能为空"
         return 1
     fi
     
     case "$fw_type" in
         ufw)
             ufw allow "$port/$protocol"
-            log_success "已开放端口 $port/$protocol"
+            日志成功 "已开放端口 $port/$protocol"
             ;;
         firewalld)
             firewall-cmd --permanent --add-port="$port/$protocol"
             firewall-cmd --reload
-            log_success "已开放端口 $port/$protocol"
+            日志成功 "已开放端口 $port/$protocol"
             ;;
         iptables)
             iptables -I INPUT -p "$protocol" --dport "$port" -j ACCEPT
-            log_success "已开放端口 $port/$protocol"
-            log_warn "注意: iptables 规则重启后会丢失，请手动保存"
+            日志成功 "已开放端口 $port/$protocol"
+            日志警告 "注意: iptables 规则重启后会丢失，请手动保存"
             ;;
         *)
-            log_error "未检测到防火墙，请先启用防火墙"
+            日志错误 "未检测到防火墙，请先启用防火墙"
             return 1
             ;;
     esac
 }
 
 # 关闭端口
-sys_firewall_close_port() {
+防火墙_关闭端口() {
     local port="$1"
     local protocol="${2:-tcp}"
     local fw_type
-    fw_type=$(sys_get_firewall_type)
+    fw_type=$(防火墙_获取类型)
     
     if [[ -z "$port" ]]; then
-        log_error "端口号不能为空"
+        日志错误 "端口号不能为空"
         return 1
     fi
     
     case "$fw_type" in
         ufw)
             ufw delete allow "$port/$protocol"
-            log_success "已关闭端口 $port/$protocol"
+            日志成功 "已关闭端口 $port/$protocol"
             ;;
         firewalld)
             firewall-cmd --permanent --remove-port="$port/$protocol"
             firewall-cmd --reload
-            log_success "已关闭端口 $port/$protocol"
+            日志成功 "已关闭端口 $port/$protocol"
             ;;
         iptables)
             iptables -D INPUT -p "$protocol" --dport "$port" -j ACCEPT
-            log_success "已关闭端口 $port/$protocol"
+            日志成功 "已关闭端口 $port/$protocol"
             ;;
         *)
-            log_error "未检测到防火墙"
+            日志错误 "未检测到防火墙"
             return 1
             ;;
     esac

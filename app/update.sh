@@ -2,7 +2,7 @@
 
 # ─── 内部辅助函数 ─────────────────────────────────────────
 
-_update_check() {
+_更新_检查() {
     cd "$PROJECT_ROOT" || return 1
 
     if [[ ! -d ".git" ]]; then
@@ -24,7 +24,7 @@ _update_check() {
     fi
 }
 
-_update_execute() {
+_更新_执行() {
     if git reset --hard origin/main && git clean -f -d; then
         # 恢复文件权限
         find "$PROJECT_ROOT" -type f \( -name "*.sh" -o -name "cs" \) -exec chmod +x {} \; 2>/dev/null
@@ -35,24 +35,24 @@ _update_execute() {
 
 # ─── 公开函数 ─────────────────────────────────────────
 
-update_menu() {
-    update_do
+更新_菜单() {
+    更新_执行
 }
 
-update_do() {
-    ui_info "正在检查更新..."
+更新_执行() {
+    界面信息 "正在检查更新..."
 
     local result
-    result=$(_update_check)
+    result=$(_更新_检查)
     local exit_code=$?
 
     if [[ $exit_code -eq 2 ]]; then
-        ui_msg "非 Git 安装，请手动更新" "提示"
+        界面消息 "非 Git 安装，请手动更新" "提示"
         return
     fi
 
     if [[ "$result" == "latest" ]]; then
-        ui_msg "当前已是最新版本" "提示"
+        界面消息 "当前已是最新版本" "提示"
         return
     fi
 
@@ -63,19 +63,19 @@ update_do() {
     changes=$(git diff --stat --color=always HEAD origin/main 2>/dev/null)
     diff_summary=$(git diff --numstat HEAD origin/main 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
 
-    ui_info "正在更新脚本..."
+    界面信息 "正在更新脚本..."
 
     local dirty_msg=""
     if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
         dirty_msg="\n\n⚠️ 检测到本地未提交修改，更新将丢失这些改动"
     fi
 
-    if ! ui_confirm "确定要更新到最新版本吗？${dirty_msg}"; then
+    if ! 界面确认 "确定要更新到最新版本吗？${dirty_msg}"; then
         return
     fi
 
-    if _update_execute; then
-        ui_success "脚本更新成功！"
+    if _更新_执行; then
+        界面成功 "脚本更新成功！"
 
         echo ""
         echo -e "${COLOR_PURPLE}========== 代码变更统计 ==========${COLOR_RESET}"
@@ -92,6 +92,6 @@ update_do() {
 
         exec "$PROJECT_ROOT/bin/cs"
     else
-        ui_error "更新失败"
+        界面错误 "更新失败"
     fi
 }

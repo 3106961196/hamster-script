@@ -31,7 +31,7 @@ case "$HTTP" in
     *) echo "Fork 失败 (HTTP $HTTP):"; cat /tmp/hamster-fork.json; exit 1 ;;
 esac
 
-json_escape() {
+Json转义() {
     local s="$1"
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
@@ -41,7 +41,7 @@ json_escape() {
     printf '%s' "$s"
 }
 
-create_pr() {
+创建PR() {
     local branch="$1" title="$2" body="$3"
     local head="${FORK_OWNER}:${branch}"
     local esc_title esc_body payload url http_code resp
@@ -55,8 +55,8 @@ create_pr() {
         return 0
     fi
 
-    esc_title=$(json_escape "$title")
-    esc_body=$(json_escape "$body")
+    esc_title=$(Json转义 "$title")
+    esc_body=$(Json转义 "$body")
     payload="{\"title\":\"${esc_title}\",\"head\":\"${head}\",\"base\":\"main\",\"body\":\"${esc_body}\"}"
 
     resp=$(curl -s -w '\n__HTTP__:%{http_code}' -X POST \
@@ -78,11 +78,11 @@ create_pr() {
 }
 
 BRANCHES=(
-    "fix/tool-bootstrap|fix: add tool_bootstrap for standalone tool scripts|工具 install/manage 脚本在子 shell 中运行时缺少 log/pkg 等库，导致函数未定义。"
-    "fix/config-system|fix: wire config loading and save_user_config|支持默认/系统/用户三层配置加载；实现 save_user_config；添加 get_install_dir/get_work_dir。"
+    "fix/tool-bootstrap|fix: add 工具引导 for standalone tool scripts|工具 install/manage 脚本在子 shell 中运行时缺少 log/pkg 等库，导致函数未定义。"
+    "fix/config-system|fix: wire config loading and 保存用户配置|支持默认/系统/用户三层配置加载；实现 保存用户配置；添加 获取安装目录/获取工作目录。"
     "fix/install-paths|fix: remove hardcoded /cs install paths|tmux、cs 包装脚本和项目安装路径改为从 INSTALL_DIR/配置读取。"
     "fix/git-proxy-and-safe-update|fix: make GitHub proxy opt-in and confirm before hard reset|Git 代理需 ENABLE_GITHUB_PROXY=1；setup/update 在 hard reset 前检测本地改动并确认。"
-    "fix/tool-start-security|fix: replace eval in tool_start with bash -c|用 nohup bash -c 替代 eval 启动工具；统一 xrk-agt 安装后启动流程。"
+    "fix/tool-start-security|fix: replace eval in 工具_启动 with bash -c|用 nohup bash -c 替代 eval 启动工具；统一 xrk-agt 安装后启动流程。"
     "fix/cli-and-docs|feat: add cs update/version/help CLI aliases|支持 cs update/version/help，保留 cs r 别名；同步 README 与 setup 提示。"
     "fix/apt-and-security|fix: apt mirror for Debian and harden dangerous ops|Debian 使用 debian 镜像路径；用户删除列表排除 root；移除无效时区；iptables 清空前警告。"
     "chore/remove-dev-artifacts|chore: remove local dev artifacts from repo|删除 fix_pick.ps1、reasonix.toml 并加入 .gitignore。"
@@ -103,7 +103,7 @@ for entry in "${BRANCHES[@]}"; do
     echo "==> $branch"
     git push -u fork "$branch" || { echo "push 失败: $branch" >&2; FAILED=$((FAILED+1)); continue; }
 
-    if create_pr "$branch" "$title" "$body"; then
+    if 创建PR "$branch" "$title" "$body"; then
         url=$(curl -s -H "Authorization: Bearer $TOKEN" \
             "https://api.github.com/repos/${UPSTREAM}/pulls?head=${FORK_OWNER}:${branch}&state=open" | \
             sed -n 's/.*"html_url"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1)

@@ -4,15 +4,15 @@ set -euo pipefail
 
 INSTALL_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 
-link_conf() {
-    local main menus_tpl menus_out entry menu_cmd
-    main="${INSTALL_DIR}/config/tmux/tmux.conf"
+链接Tmux配置() {
+    local 主配置文件 menus_tpl menus_out entry menu_cmd
+    主配置文件="${INSTALL_DIR}/config/tmux/tmux.conf"
     menus_tpl="${INSTALL_DIR}/config/tmux/tmux-menus.conf"
     entry="$HOME/.tmux.conf"
     menus_out="$HOME/.tmux/hamster-menus.conf"
     menu_cmd="bash ${INSTALL_DIR}/config/tmux/tmux-menu.sh"
 
-    [[ -f "$main" && -f "$menus_tpl" ]] || {
+    [[ -f "$主配置文件" && -f "$menus_tpl" ]] || {
         echo "[hamster-tmux] 缺少 config/tmux/tmux.conf 或 tmux-menus.conf" >&2
         return 1
     }
@@ -21,14 +21,14 @@ link_conf() {
     sed "s|@HAMSTER_MENU@|${menu_cmd}|g" "$menus_tpl" > "$menus_out"
     {
         echo "# Hamster Script tmux（hamster-tmux --setup 生成）"
-        cat "$main"
+        cat "$主配置文件"
         echo ""
         echo "source-file ${menus_out}"
     } > "$entry"
     echo "[hamster-tmux] 已写入 $entry"
 }
 
-install_tmux_pkg() {
+安装Tmux包() {
     command -v tmux &>/dev/null && {
         echo "[hamster-tmux] 已安装: $(tmux -V)"
         return 0
@@ -51,7 +51,7 @@ install_tmux_pkg() {
     echo "[hamster-tmux] 已安装: $(tmux -V)"
 }
 
-create_wrapper() {
+创建Tmux包装命令() {
     cat > /usr/local/bin/hamster-tmux << EOF
 #!/bin/bash
 export HAMSTER_ROOT="${INSTALL_DIR}"
@@ -62,12 +62,12 @@ EOF
 
 case "${1:-}" in
     --link-only)
-        link_conf
+        链接Tmux配置
         exit 0
         ;;
 esac
 
-install_tmux_pkg
-link_conf
-create_wrapper
+安装Tmux包
+链接Tmux配置
+创建Tmux包装命令
 echo "[hamster-tmux] 完成"

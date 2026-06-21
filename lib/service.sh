@@ -3,13 +3,13 @@
 # 服务管理
 
 # 检查是否为 systemd 系统
-sys_is_systemd() {
-    command_exists systemctl && [[ -d /run/systemd/system ]]
+服务_是否Systemd() {
+    命令存在 systemctl && [[ -d /run/systemd/system ]]
 }
 
 # 列出运行中的服务
-sys_service_list() {
-    if sys_is_systemd; then
+服务_列表() {
+    if 服务_是否Systemd; then
         systemctl list-units --type=service --state=running
     else
         service --status-all 2>/dev/null | grep +
@@ -17,9 +17,9 @@ sys_service_list() {
 }
 
 # 启动服务
-sys_service_start() {
+服务_启动() {
     local service="$1"
-    if sys_is_systemd; then
+    if 服务_是否Systemd; then
         systemctl start "$service"
     else
         service "$service" start
@@ -27,9 +27,9 @@ sys_service_start() {
 }
 
 # 停止服务
-sys_service_stop() {
+服务_停止() {
     local service="$1"
-    if sys_is_systemd; then
+    if 服务_是否Systemd; then
         systemctl stop "$service"
     else
         service "$service" stop
@@ -37,9 +37,9 @@ sys_service_stop() {
 }
 
 # 重启服务
-sys_service_restart() {
+服务_重启() {
     local service="$1"
-    if sys_is_systemd; then
+    if 服务_是否Systemd; then
         systemctl restart "$service"
     else
         service "$service" restart
@@ -47,9 +47,9 @@ sys_service_restart() {
 }
 
 # 查看服务状态
-sys_service_status() {
+服务_状态() {
     local service="$1"
-    if sys_is_systemd; then
+    if 服务_是否Systemd; then
         systemctl status "$service"
     else
         service "$service" status
@@ -57,9 +57,9 @@ sys_service_status() {
 }
 
 # 检查服务是否运行
-sys_service_is_running() {
+服务_是否运行中() {
     local service="$1"
-    if sys_is_systemd; then
+    if 服务_是否Systemd; then
         systemctl is-active --quiet "$service"
     else
         service "$service" status &>/dev/null

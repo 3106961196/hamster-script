@@ -10,7 +10,7 @@ FORK_OWNER=$(curl -s -H "Authorization: Bearer $TOKEN" https://api.github.com/us
 
 git push -u fork "$BRANCH"
 
-json_escape() {
+Json转义() {
     local s="$1"
     s="${s//\\/\\\\}"
     s="${s//\"/\\\"}"
@@ -26,7 +26,7 @@ full_body="${BODY}
 - [ ] SSH 登录自动进入桌面
 - [ ] cs tmux 手动进入"
 
-payload="{\"title\":\"$(json_escape "$TITLE")\",\"head\":\"${FORK_OWNER}:${BRANCH}\",\"base\":\"main\",\"body\":\"$(json_escape "$full_body")\"}"
+payload="{\"title\":\"$(Json转义 "$TITLE")\",\"head\":\"${FORK_OWNER}:${BRANCH}\",\"base\":\"main\",\"body\":\"$(Json转义 "$full_body")\"}"
 
 resp=$(curl -s -w '\n__HTTP__:%{http_code}' -X POST \
     -H "Authorization: Bearer $TOKEN" \

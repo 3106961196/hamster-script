@@ -1,0 +1,10 @@
+# Hamster Script 默认配置
+# 可被 /etc/hamster-scripts/config.yaml 与 ~/.config/hamster-scripts/config.yaml 覆盖
+
+log_dir: /var/log/hamster-scripts
+backup_dir: /var/backups/hamster-scripts
+temp_dir: /tmp/hamster-scripts
+config_dir: /etc/hamster-scripts
+data_dir: /var/lib/hamster-scripts
+install_dir: /cs
+work_dir: /root/cs

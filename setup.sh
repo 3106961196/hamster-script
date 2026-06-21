@@ -1,10 +1,11 @@
 #!/bin/bash
 
-REPO_URL="https://github.com/3106961196/hamster-script.git"
+REPO_URL="${REPO_URL:-https://github.com/3106961196/hamster-script.git}"
+REPO_BRANCH="${REPO_BRANCH:-main}"
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 
 # GitHub 代理（可选，需显式启用: ENABLE_GITHUB_PROXY=1）
-setup_git_proxy() {
+安装_Git代理() {
     if [[ "${ENABLE_GITHUB_PROXY:-0}" != "1" ]]; then
         return 0
     fi
@@ -16,7 +17,7 @@ setup_git_proxy() {
 TOTAL_STEPS=6
 CURRENT_STEP=0
 
-show_progress() {
+显示进度() {
     local current="$1"
     local total="$2"
     local message="$3"
@@ -35,14 +36,14 @@ show_progress() {
     fi
 }
 
-show_step() {
+显示步骤() {
     local step_num="$1"
     local message="$2"
     echo ""
     echo "[$step_num/$TOTAL_STEPS] $message"
 }
 
-print_banner() {
+打印横幅() {
     clear
     echo ""
     echo "    (\\_/)"
@@ -55,14 +56,14 @@ print_banner() {
     echo ""
 }
 
-check_root() {
+检查Root权限() {
     if [[ $EUID -ne 0 ]]; then
         echo "错误: 请使用 root 用户运行此脚本"
         exit 1
     fi
 }
 
-check_os() {
+检查操作系统() {
     if [[ ! -f /etc/os-release ]]; then
         echo "错误: 无法识别系统类型"
         exit 1
@@ -90,9 +91,9 @@ check_os() {
     esac
 }
 
-install_dependencies() {
+安装依赖() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "安装依赖包..."
+    显示步骤 "$CURRENT_STEP" "安装依赖包..."
 
     case "$PKG_MANAGER" in
         apt)
@@ -112,9 +113,9 @@ install_dependencies() {
     esac
 }
 
-check_dialog() {
+检查Dialog() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "检查 dialog..."
+    显示步骤 "$CURRENT_STEP" "检查 dialog..."
 
     if command -v dialog &>/dev/null; then
         echo "dialog 已安装，跳过"
@@ -136,7 +137,7 @@ check_dialog() {
     echo "dialog 安装成功"
 }
 
-ask_backup() {
+询问备份() {
     local dir="$1"
     local backup_dir="${dir}.bak.$(date +%Y%m%d%H%M%S)"
     
@@ -166,9 +167,9 @@ ask_backup() {
     fi
 }
 
-download_scripts() {
+下载脚本() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "下载脚本..."
+    显示步骤 "$CURRENT_STEP" "下载脚本..."
     
     if [[ -d "$INSTALL_DIR" ]]; then
         if [[ -d "$INSTALL_DIR/.git" ]]; then
@@ -188,35 +189,35 @@ download_scripts() {
                         return 0
                     fi
                 fi
-                git reset --hard origin/main >/dev/null 2>&1
+                git reset --hard "origin/${REPO_BRANCH}" >/dev/null 2>&1
                 git clean -f -d >/dev/null 2>&1
             else
-                if ask_backup "$INSTALL_DIR"; then
+                if 询问备份 "$INSTALL_DIR"; then
                     echo "克隆仓库..."
-                    git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
+                    git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
                 else
                     exit 0
                 fi
             fi
         else
-            if ask_backup "$INSTALL_DIR"; then
+            if 询问备份 "$INSTALL_DIR"; then
                 echo "克隆仓库..."
-                git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
+                git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
             else
                 exit 0
             fi
         fi
     else
         echo "克隆仓库..."
-        git clone --depth 1 "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
+        git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" >/dev/null 2>&1
     fi
     
     find "$INSTALL_DIR" -type f -name "*.sh" -exec chmod +x {} \; 2>/dev/null
 }
 
-create_command() {
+创建命令() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "创建 cs 命令..."
+    显示步骤 "$CURRENT_STEP" "创建 cs 命令..."
     
     cat > /usr/local/bin/cs << EOF
 #!/bin/bash
@@ -225,9 +226,9 @@ EOF
     chmod +x /usr/local/bin/cs
 }
 
-create_directories() {
+创建目录() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "创建配置目录..."
+    显示步骤 "$CURRENT_STEP" "创建配置目录..."
     
     mkdir -p /var/log/hamster-scripts
     mkdir -p /var/backups/hamster-scripts
@@ -242,9 +243,9 @@ create_directories() {
     fi
 }
 
-setup_tmux() {
+安装Tmux() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "配置 Tmux..."
+    显示步骤 "$CURRENT_STEP" "配置 Tmux..."
 
     export HAMSTER_ROOT="$INSTALL_DIR"
     bash "$INSTALL_DIR/config/tmux/setup.sh"
@@ -252,9 +253,9 @@ setup_tmux() {
     echo '[[ -f /cs/.init.sh ]] && source /cs/.init.sh' >> "$HOME/.bashrc"
 }
 
-print_success() {
+打印成功信息() {
     CURRENT_STEP=$((CURRENT_STEP + 1))
-    show_step "$CURRENT_STEP" "安装完成!"
+    显示步骤 "$CURRENT_STEP" "安装完成!"
     
     echo ""
     echo "========================================"
@@ -272,7 +273,7 @@ print_success() {
     echo ""
 }
 
-sync_timezone() {
+同步时区() {
     if command -v timedatectl &>/dev/null; then
         timedatectl set-ntp true 2>/dev/null || true
         local timezone
@@ -285,20 +286,20 @@ sync_timezone() {
     fi
 }
 
-main() {
-    print_banner
-    check_root
-    check_os
-    setup_git_proxy
-    install_dependencies
-    check_dialog
-    download_scripts
-    create_command
-    create_directories
-    setup_tmux
-    print_success
+程序入口() {
+    打印横幅
+    检查Root权限
+    检查操作系统
+    安装_Git代理
+    安装依赖
+    检查Dialog
+    下载脚本
+    创建命令
+    创建目录
+    安装Tmux
+    打印成功信息
     
-    sync_timezone
+    同步时区
     
     if [[ -n "$SSH_CONNECTION" && -z "$TMUX" ]]; then
         echo "正在启动 Tmux..."
@@ -306,4 +307,4 @@ main() {
     fi
 }
 
-main "$@"
+程序入口 "$@"

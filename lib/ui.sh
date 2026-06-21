@@ -2,7 +2,7 @@
 
 UI_TITLE="Hamster Script"
 
-ui_init() {
+界面初始化() {
     if ! command -v dialog &>/dev/null; then
         echo "错误: dialog 未安装" >&2
     fi
@@ -10,7 +10,7 @@ ui_init() {
 
 # ─── 核心菜单函数 ─────────────────────────────────────────
 
-# _ui_dialog_pick: 内核函数，统一处理 dialog --menu 交互
+# _界面选择对话框: 内核函数，统一处理 dialog --menu 交互
 # 参数:
 #   $1  - title (显示在 dialog 顶部的标题)
 #   $2  - prompt (菜单提示文本)
@@ -18,7 +18,7 @@ ui_init() {
 #   $4  - extra_label (返回键的显示文本，如 '返回')
 #   $5  - mode (menu|checklist，默认 menu)
 #   $6+ - items数组 (key-value交替的条目列表)
-_ui_dialog_pick() {
+_界面选择对话框() {
     local title="$1"
     local prompt="$2"
     local extra_key="$3"
@@ -64,60 +64,60 @@ _ui_dialog_pick() {
     return $exit_code
 }
 
-ui_select() {
+界面选择() {
     local title="$1"
     local prompt="${2:-请选择:}"
     shift 2
     local items=("$@")
 
-    _ui_dialog_pick "$title" "$prompt" '' '' "menu" "${items[@]}"
+    _界面选择对话框 "$title" "$prompt" '' '' "menu" "${items[@]}"
 }
 
-ui_menu() {
-    ui_select "$1" "${2:-请选择:}" "${@:3}"
+界面菜单() {
+    界面选择 "$1" "${2:-请选择:}" "${@:3}"
 }
 
-ui_submenu() {
+界面子菜单() {
     local title="$1"
     local prompt="${2:-请选择:}"
     shift 2
     local items=("$@")
 
-    _ui_dialog_pick "$title" "$prompt" 'b' '返回' "menu" "${items[@]}"
+    _界面选择对话框 "$title" "$prompt" 'b' '返回' "menu" "${items[@]}"
 }
 
-ui_multi_select() {
+界面多选() {
     local title="$1"
     local prompt="${2:-请选择 (空格选中, Enter确认):}"
     shift 2
     local items=("$@")
 
-    _ui_dialog_pick "$title" "$prompt" '' '' "checklist" "${items[@]}"
+    _界面选择对话框 "$title" "$prompt" '' '' "checklist" "${items[@]}"
 }
 
-ui_msg() {
+界面消息() {
     local message="$1"
     local title="${2:-提示}"
 
     dialog --title "$title" --msgbox "$message" 10 60 2>/dev/tty
 }
 
-ui_error() {
+界面错误() {
     local message="$1"
     echo -e "\033[31m* $message\033[0m" >&2
 }
 
-ui_info() {
+界面信息() {
     local message="$1"
     echo -e "\033[36m$message\033[0m" >&2
 }
 
-ui_success() {
+界面成功() {
     local message="$1"
     echo -e "\033[32m+ $message\033[0m" >&2
 }
 
-ui_input() {
+界面输入() {
     local prompt="$1"
     local default="${2:-}"
 
@@ -126,18 +126,18 @@ ui_input() {
     echo "$result"
 }
 
-ui_confirm() {
+界面确认() {
     local message="$1"
     local title="${2:-确认}"
 
     dialog --title "$title" --yesno "$message" 10 60 2>/dev/tty
 }
 
-ui_yesno() {
-    ui_confirm "$@"
+界面是否() {
+    界面确认 "$@"
 }
 
-ui_text() {
+界面文本() {
     local content="$1"
     local title="${2:-内容}"
 
@@ -148,24 +148,24 @@ ui_text() {
     rm -f "$tmp_file"
 }
 
-ui_select_file() {
+界面选择文件() {
     local start_dir="${1:-.}"
     local title="${2:-选择文件}"
 
     dialog --stdout --title "$title" --fselect "$start_dir/" 16 76 2>/dev/tty
 }
 
-ui_pause() {
+界面暂停() {
     local message="${1:-按 Enter 继续...}"
     read -r -p "$message" -n 1 -s
     echo ""
 }
 
-ui_clear() {
+界面清屏() {
     clear
 }
 
-ui_spinner() {
+界面加载动画() {
     local pid="$1"
     local message="${2:-处理中...}"
     local pct=0
@@ -184,10 +184,10 @@ ui_spinner() {
     echo "100"
 }
 
-ui_action() {
+界面动作() {
     local title="$1"
     shift
     local actions=("$@")
 
-    _ui_dialog_pick "$title" "操作:" '' '' "menu" "${actions[@]}"
+    _界面选择对话框 "$title" "操作:" '' '' "menu" "${actions[@]}"
 }

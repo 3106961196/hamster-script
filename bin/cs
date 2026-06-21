@@ -9,9 +9,9 @@ PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PROJECT_ROOT
 
 source "$PROJECT_ROOT/lib/core.sh"
-init_core
+初始化核心
 
-_show_help() {
+_显示帮助() {
     echo "用法: cs [命令]"
     echo ""
     echo "命令:"
@@ -22,12 +22,12 @@ _show_help() {
     echo "  help, -h    查看帮助"
 }
 
-main() {
+程序入口() {
     if [[ $# -gt 0 ]]; then
         case "$1" in
             r|update)
-                load_module "update"
-                update_do
+                加载模块 "update"
+                更新_执行
                 ;;
             tmux)
                 export HAMSTER_ROOT="$PROJECT_ROOT"
@@ -37,20 +37,20 @@ main() {
                 echo "${PROJECT_NAME} v${PROJECT_VERSION}"
                 ;;
             help|-h|--help)
-                _show_help
+                _显示帮助
                 ;;
             *)
                 echo "未知命令: $1"
                 echo ""
-                _show_help
+                _显示帮助
                 exit 1
                 ;;
         esac
         exit 0
     fi
 
-    load_module "menu"
-    main_menu
+    加载模块 "menu"
+    主菜单
 }
 
-main "$@"
+程序入口 "$@"

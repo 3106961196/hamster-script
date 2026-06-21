@@ -7,7 +7,7 @@ PROJECT_VERSION="2.0.0"
 PROJECT_AUTHOR="CS"
 
 # 获取项目根目录
-get_project_root() {
+获取项目根目录() {
     if [[ -n "${PROJECT_ROOT:-}" ]]; then
         echo "$PROJECT_ROOT"
         return 0
@@ -20,7 +20,7 @@ get_project_root() {
 }
 
 if [[ -z "${PROJECT_ROOT:-}" ]]; then
-    PROJECT_ROOT="$(get_project_root)"
+    PROJECT_ROOT="$(获取项目根目录)"
 fi
 export PROJECT_ROOT PROJECT_NAME PROJECT_VERSION PROJECT_AUTHOR
 
@@ -29,11 +29,11 @@ LIB_DIR="$PROJECT_ROOT/lib"
 APP_DIR="$PROJECT_ROOT/app"
 TOOLS_DIR="$PROJECT_ROOT/tools"
 
-# 全局关联数组（必须在 load_all_libs 之前声明，避免 source 在函数内导致局部作用域）
+# 全局关联数组（必须在 加载全部库 之前声明，避免 source 在函数内导致局部作用域）
 declare -A CONFIG
 
 # 加载库
-load_lib() {
+加载库() {
     local lib_name="$1"
     local lib_file="$LIB_DIR/${lib_name}.sh"
     if [[ -f "$lib_file" ]]; then
@@ -45,7 +45,7 @@ load_lib() {
 }
 
 # 加载应用模块
-load_module() {
+加载模块() {
     local module_name="$1"
     local module_file="$APP_DIR/${module_name}.sh"
     if [[ -f "$module_file" ]]; then
@@ -57,68 +57,68 @@ load_module() {
 }
 
 # 加载所有库
-load_all_libs() {
+加载全部库() {
     local libs=("log" "config" "ui" "pkg" "sys" "service" "firewall" "net" "tool")
     for lib in "${libs[@]}"; do
-        load_lib "$lib"
+        加载库 "$lib"
     done
 }
 
 # 初始化核心
-init_core() {
-    load_all_libs
-    config_load
-    init_logging
-    ui_init
+初始化核心() {
+    加载全部库
+    加载配置
+    初始化日志
+    界面初始化
 }
 
 # 工具脚本独立运行时引导（install.sh / manage.sh 子进程调用）
-tool_bootstrap() {
-    load_all_libs
-    config_load
+工具引导() {
+    加载全部库
+    加载配置
 }
 
 # 工具函数
-command_exists() {
+命令存在() {
     command -v "$1" &>/dev/null
 }
 
-file_exists() {
+文件存在() {
     [[ -f "$1" ]]
 }
 
-dir_exists() {
+目录存在() {
     [[ -d "$1" ]]
 }
 
-ensure_dir() {
+确保目录() {
     [[ ! -d "$1" ]] && mkdir -p "$1"
 }
 
-is_root() {
+是否Root() {
     [[ $EUID -eq 0 ]]
 }
 
-trim() {
+去空白() {
     local var="$1"
     var="${var#"${var%%[![:space:]]*}"}"
     var="${var%"${var##*[![:space:]]}"}"
     echo "$var"
 }
 
-random_string() {
+随机字符串() {
     local length="${1:-8}"
     tr -dc 'a-zA-Z0-9' </dev/urandom | head -c "$length"
 }
 
-cleanup_temp() {
+清理临时目录() {
     local temp_dir="/tmp/${PROJECT_NAME}"
     if [[ -d "$temp_dir" ]]; then
         rm -rf "$temp_dir"/* 2>/dev/null || true
     fi
 }
 
-trap_add() {
+添加退出陷阱() {
     local handler="$1"
     local existing_handler
     existing_handler=$(trap -p EXIT | sed "s/^trap -- '\(.*\)' EXIT$/\1/")
