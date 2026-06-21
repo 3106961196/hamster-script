@@ -16,10 +16,8 @@ if ! 界面任务 "" 工具_安装 "xrk-agt"; then
     exit 1
 fi
 
-if 界面确认 "是否现在启动 XRK-AGT？"; then
-    if 工具_启动 "xrk-agt"; then
-        界面成功 "XRK-AGT 已启动"
-    else
-        界面警告 "XRK-AGT 启动失败\n请检查 Redis/MongoDB 是否在运行\n或在管理菜单中前台启动查看日志"
-    fi
-fi
+工具_加载配置 "xrk-agt" || exit 1
+工具_安装依赖 "xrk-agt" || exit 1
+cd "$TOOL_INSTALL_DIR" || exit 1
+界面清屏
+exec node app.js

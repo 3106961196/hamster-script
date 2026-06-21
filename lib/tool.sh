@@ -31,7 +31,7 @@ _工具_规范化Deps() {
 # 安装目录跟随 config work_dir（与 install_dir 一致，避免装到 A 目录却去 B 目录检测）
 _工具_清除配置() {
     unset TOOL_KIND TOOL_NAME TOOL_REPO TOOL_INSTALL_DIR TOOL_INSTALL_SUBDIR
-    unset TOOL_START_CMD TOOL_DEBUG_CMD NAPCAT_ZIP_URL NAPCAT_LAUNCHER NAPCAT_DEFAULT_PORT
+    unset NAPCAT_ZIP_URL NAPCAT_LAUNCHER NAPCAT_DEFAULT_PORT
     unset CONFIG_DIR NAPCATBOT_FILE QQ_PACKAGE_JSON QQ_MAIN_ORIGINAL LOAD_NAPCAT_JS QQ_BIN
     unset TOOL_DEPS
     TOOL_DEPS=()
@@ -226,66 +226,6 @@ _工具_解析安装目录() {
     日志成功 "$tool_name 安装完成"
 }
 
-# 启动工具
-工具_启动() {
-    local tool_name="$1"
-    local log_file pid
-
-    工具_加载配置 "$tool_name" || return 1
-
-    if ! 工具_是否已安装 "$tool_name"; then
-        日志错误 "工具未安装: $tool_name"
-        return 1
-    fi
-
-    工具_安装依赖 "$tool_name" || return 1
-
-    cd "$TOOL_INSTALL_DIR" || return 1
-    log_file="$TOOL_INSTALL_DIR/.hamster-start.log"
-
-    日志信息 "启动 $tool_name..."
-    nohup bash -lc "cd '$TOOL_INSTALL_DIR' && exec $TOOL_START_CMD" >>"$log_file" 2>&1 &
-    pid=$!
-    echo "$pid" > "$TOOL_INSTALL_DIR/.pid"
-
-    sleep 2
-    if kill -0 "$pid" 2>/dev/null; then
-        日志成功 "$tool_name 已启动 (PID: $pid)"
-        return 0
-    fi
-
-    rm -f "$TOOL_INSTALL_DIR/.pid"
-    日志错误 "$tool_name 启动失败"
-    if [[ -s "$log_file" ]]; then
-        tail -n 3 "$log_file" | while IFS= read -r line; do
-            日志错误 "  $line"
-        done
-    fi
-    return 1
-}
-
-# 停止工具
-工具_停止() {
-    local tool_name="$1"
-    工具_加载配置 "$tool_name" || return 1
-    
-    local pid_file="$TOOL_INSTALL_DIR/.pid"
-    
-    if [[ -f "$pid_file" ]]; then
-        local pid=$(cat "$pid_file")
-        if kill -0 "$pid" 2>/dev/null; then
-            kill "$pid"
-            rm -f "$pid_file"
-            日志成功 "$tool_name 已停止"
-        else
-            rm -f "$pid_file"
-            日志警告 "进程已不存在，清理 PID 文件"
-        fi
-    else
-        日志警告 "$tool_name 未运行"
-    fi
-}
-
 # 更新工具
 工具_更新() {
     local tool_name="$1"
@@ -320,9 +260,7 @@ _工具_解析安装目录() {
 工具_卸载() {
     local tool_name="$1"
     工具_加载配置 "$tool_name" || return 1
-    
-    工具_停止 "$tool_name" 2>/dev/null
-    
+
     if [[ -d "$TOOL_INSTALL_DIR" ]]; then
         日志信息 "正在删除 $TOOL_INSTALL_DIR..."
         rm -rf "$TOOL_INSTALL_DIR"
