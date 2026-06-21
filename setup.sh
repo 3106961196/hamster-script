@@ -32,22 +32,99 @@ _拉取仓库() {
 }
 
 _安装前引导() {
-    local choice pkg_manager
-
+    local pkg_manager
+    
     pkg_manager=$(包管理_获取管理器 2>/dev/null || echo unknown)
     [[ "$pkg_manager" != "apt" ]] && return 0
+    
+    # 自动检测是否在国内服务器
+    if _是否国内服务器; then
+        echo ""
+        echo "检测到国内服务器，自动优化 apt 源..."
+        if _自动换源_apt; then
+            echo "✓ apt 源已优化"
+        else
+            echo "⚠ 自动换源失败，继续安装..."
+        fi
+    fi
+}
 
-    echo ""
-    echo "安装前可选步骤："
-    echo "  1) 使用 linuxmirrors 换源"
-    echo "  2) 跳过，直接安装"
-    read -rp "请选择 [1/2]: " choice
-    case "$choice" in
-        1)
-            echo "正在启动 linuxmirrors..."
-            包管理_Linux换源 || echo "换源未完成" >&2
-            ;;
+_是否国内服务器() {
+    # 方式 1：时区判断
+    local tz="${TZ:-}"
+    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || timedatectl show 2>/dev/null | grep -oP 'Timezone=\K.*' || echo "")
+    [[ "$tz" == *"Shanghai"* || "$tz" == *"Chongqing"* || "$tz" == *"Asia"* ]] && return 0
+    
+    # 方式 2：IP 判断（备用）
+    if command -v curl &>/dev/null; then
+        local country
+        country=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null || echo "")
+        [[ "$country" == "CN" ]] && return 0
+    fi
+    
+    return 1
+}
+
+_自动换源_apt() {
+    local mirrors=(
+        "mirrors.aliyun.com"
+        "mirrors.tuna.tsinghua.edu.cn"
+        "mirrors.ustc.edu.cn"
+        "mirrors.huaweicloud.com"
+    )
+    local best_mirror="" min_ms=999999
+    
+    # 测速选最快镜像
+    for mirror in "${mirrors[@]}"; do
+        local start end elapsed
+        start=$(date +%s%N 2>/dev/null || echo 0)
+        if timeout 3 curl -fsI "https://${mirror}/" >/dev/null 2>&1; then
+            end=$(date +%s%N 2>/dev/null || echo 0)
+            elapsed=$(( (end - start) / 1000000 ))
+            if [[ "$elapsed" -lt "$min_ms" ]]; then
+                min_ms=$elapsed
+                best_mirror=$mirror
+            fi
+        fi
+    done
+    
+    [[ -z "$best_mirror" ]] && return 1
+    
+    # 获取发行版信息
+    local codename dist_id
+    if [[ -f /etc/os-release ]]; then
+        # shellcheck source=/dev/null
+        source /etc/os-release
+        codename="${VERSION_CODENAME:-}"
+        dist_id="${ID:-}"
+    fi
+    [[ -z "$codename" ]] && return 1
+    
+    # 根据发行版选择正确的源路径
+    local repo_path
+    case "$dist_id" in
+        ubuntu) repo_path="ubuntu" ;;
+        debian) repo_path="debian" ;;
+        *) return 1 ;;
     esac
+    
+    # 备份原 sources.list
+    local sources_file="/etc/apt/sources.list"
+    if [[ -f "$sources_file" ]]; then
+        cp "$sources_file" "${sources_file}.bak.$(date +%s)" 2>/dev/null || true
+    fi
+    
+    # 写入新源
+    cat > "$sources_file" <<EOF
+deb https://${best_mirror}/${repo_path}/ ${codename} main restricted universe multiverse
+deb https://${best_mirror}/${repo_path}/ ${codename}-updates main restricted universe multiverse
+deb https://${best_mirror}/${repo_path}/ ${codename}-backports main restricted universe multiverse
+deb https://${best_mirror}/${repo_path}/ ${codename}-security main restricted universe multiverse
+EOF
+    
+    # 更新源索引
+    apt-get update -qq 2>/dev/null || true
+    return 0
 }
 
 程序入口() {
