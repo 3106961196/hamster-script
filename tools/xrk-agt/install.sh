@@ -17,7 +17,6 @@ if ! 界面任务 "" 工具_安装 "xrk-agt"; then
 fi
 
 工具_加载配置 "xrk-agt" || exit 1
-工具_安装依赖 "xrk-agt" || exit 1
 cd "$TOOL_INSTALL_DIR" || exit 1
 界面清屏
 exec node app.js
