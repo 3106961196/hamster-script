@@ -18,9 +18,10 @@ _仓库根路径() {
 _拉取仓库() {
     if [[ -d "$INSTALL_DIR/lib" && -f "$INSTALL_DIR/lib/core.sh" ]]; then
         cd "$INSTALL_DIR" || return 1
-        git fetch origin 2>/dev/null || true
-        git reset --hard "origin/${REPO_BRANCH}" 2>/dev/null || true
-        git clean -f -d 2>/dev/null || true
+        # git reset 会往 stdout 打印 "HEAD is now at ..."，不能污染 $() 捕获的路径
+        git fetch origin >/dev/null 2>&1 || true
+        git reset --hard "origin/${REPO_BRANCH}" >/dev/null 2>&1 || true
+        git clean -f -d >/dev/null 2>&1 || true
         echo "$INSTALL_DIR"
         return 0
     fi
@@ -38,6 +39,11 @@ _拉取仓库() {
     repo_root="$(_仓库根路径)"
     if [[ -z "$repo_root" ]]; then
         repo_root="$(_拉取仓库)" || { echo "拉取仓库失败"; exit 1; }
+    fi
+
+    if [[ ! -f "$repo_root/lib/core.sh" ]]; then
+        echo "仓库路径无效（缺少 lib/core.sh）: $repo_root" >&2
+        exit 1
     fi
 
     export PROJECT_ROOT="$repo_root" HAMSTER_ROOT="$repo_root"
