@@ -64,7 +64,7 @@ _INSTALL_MAX_RETRIES=3
     local cmd="$1" pkg="${2:-$1}"
     [[ -z "$cmd" ]] && return 1
     command -v "$cmd" &>/dev/null && return 0
-    包管理_安装 "$pkg"
+    _包管理_分发安装 "$pkg"
 }
 
 包管理_获取系统类型() {
@@ -195,6 +195,25 @@ YUMEOF
     esac
 }
 
+# 底层：安装官方 mongodb-org（需先配置源）
+_包管理_安装MongoDBOrg() {
+    local pkg_manager
+
+    pkg_manager=$(包管理_获取管理器)
+    _包管理_配置MongoDB源 || return 1
+    case "$pkg_manager" in
+        apt)
+            DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a \
+                apt-get install -y mongodb-org 2>&1 || return 1
+            ;;
+        yum|dnf)
+            "$pkg_manager" install -y mongodb-org 2>&1 || return 1
+            ;;
+        *) 日志错误 "不支持的包管理器"; return 1 ;;
+    esac
+    包管理_MongoDB已安装
+}
+
 包管理_规范化包名() {
     case "$1" in
         chromium-browser) echo chromium ;;
@@ -264,63 +283,35 @@ YUMEOF
     rpm -q linuxqq &>/dev/null
 }
 
+# 入口分发：特殊包走 包管理_确保*，普通包走底层 _包管理_安装重试
+_包管理_分发安装() {
+    local raw="$1" package
+
+    [[ -z "$raw" ]] && return 1
+    package=$(包管理_规范化包名 "$raw")
+
+    case "$package" in
+        linuxqq)
+            日志错误 "linuxqq 不在 apt 源中，请通过 NapCat 安装（自动下载腾讯 QQ.deb）"
+            return 1
+            ;;
+        chromium) 包管理_确保Chromium ;;
+        mongodb|mongodb-org) 包管理_确保MongoDB ;;
+        redis) 包管理_确保Redis ;;
+        node) 包管理_确保Node ;;
+        *) _包管理_安装重试 "$raw" ;;
+    esac
+}
+
 包管理_安装() {
-    local package
-    package=$(包管理_规范化包名 "$1")
-
-    if [[ "$package" == "linuxqq" ]]; then
-        日志错误 "linuxqq 不在 apt 源中，请通过 NapCat 安装（自动下载腾讯 QQ.deb）"
-        return 1
-    fi
-    local pkg_manager
-    pkg_manager=$(包管理_获取管理器)
-
-    # Chromium：走 xtradeb PPA（见 lib/chromium.sh）
-    if [[ "$package" == "chromium" ]]; then
-        包管理_确保Chromium
-        return $?
-    fi
-
-    # MongoDB：菜单项 mongodb → 官方 mongodb-org
-    if [[ "$package" == "mongodb" ]]; then
-        包管理_确保MongoDB
-        return $?
-    fi
-
-    # Redis
-    if [[ "$package" == "redis" ]]; then
-        包管理_确保Redis
-        return $?
-    fi
-
-    # Node.js：官方 tarball + pnpm（见 包管理_确保Node）
-    if [[ "$package" == "node" ]]; then
-        包管理_确保Node
-        return $?
-    fi
-
-    # MongoDB：官方 apt/yum 源（mongodb-org 7.0）
-    if [[ "$package" == "mongodb-org" ]]; then
-        _包管理_配置MongoDB源 || return 1
-        case "$pkg_manager" in
-            apt)
-                DEBIAN_FRONTEND=noninteractive apt-get install -y mongodb-org 2>&1 || return 1
-                ;;
-            yum|dnf)
-                "$pkg_manager" install -y mongodb-org 2>&1 || return 1
-                ;;
-            *) 日志错误 "不支持的包管理器"; return 1 ;;
-        esac
-        return 0
-    fi
-
-    _包管理_安装重试 "$package"
+    _包管理_分发安装 "$1"
 }
 
 _包管理_TTY清屏() {
     declare -F _界面_重置终端 &>/dev/null && _界面_重置终端
 }
 
+# 底层：仅系统包管理器安装，禁止调用 包管理_安装 / 包管理_确保*
 _包管理_安装重试() {
     local package="$1"
     local pkg_manager retry=0
@@ -344,9 +335,24 @@ _包管理_安装重试() {
                     return 0
                 fi
                 ;;
-            yum) yum install -y "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
-            pacman) pacman --disable-sandbox -Sy --noconfirm "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
-            apk) apk add --no-cache "$package" && { 日志成功 "$package 安装成功"; return 0; } ;;
+            yum)
+                if yum install -y "$package" && 包管理_是否已安装 "$package"; then
+                    日志成功 "$package 安装成功"
+                    return 0
+                fi
+                ;;
+            pacman)
+                if pacman --disable-sandbox -Sy --noconfirm "$package" && 包管理_是否已安装 "$package"; then
+                    日志成功 "$package 安装成功"
+                    return 0
+                fi
+                ;;
+            apk)
+                if apk add --no-cache "$package" && 包管理_是否已安装 "$package"; then
+                    日志成功 "$package 安装成功"
+                    return 0
+                fi
+                ;;
             *) 日志错误 "无法识别的包管理器"; return 1 ;;
         esac
         retry=$((retry + 1))
@@ -822,7 +828,7 @@ _包管理_安装NodeTarball() {
     esac
 
     包管理_确保命令 tar tar || return 1
-    包管理_确保命令 xz xz-utils || 包管理_安装 xz-utils
+    包管理_确保命令 xz xz-utils || return 1
 
     tmp=$(mktemp -d)
     tb="${tmp}/node-${version}-linux-${arch}.tar.xz"
@@ -906,11 +912,8 @@ _包管理_安装Pnpm() {
 }
 
 包管理_确保Redis() {
-    if 包管理_Redis已安装; then
-        日志信息 "Redis 已安装"
-    else
-        日志信息 "正在安装 Redis..."
-        包管理_安装 "redis" || 包管理_安装 "redis-server"
+    if ! 包管理_Redis已安装; then
+        _包管理_安装重试 redis-server || _包管理_安装重试 redis || return 1
     fi
 
     if 包管理_Redis运行中; then
@@ -938,11 +941,9 @@ _包管理_安装Pnpm() {
 }
 
 包管理_确保MongoDB() {
-    if 包管理_MongoDB已安装; then
-        日志信息 "MongoDB 已安装"
-    else
+    if ! 包管理_MongoDB已安装; then
         日志信息 "正在安装 MongoDB（官方 mongodb-org）..."
-        包管理_安装 "mongodb-org" || return 1
+        _包管理_安装MongoDBOrg || return 1
     fi
 
     if 包管理_MongoDB运行中; then
