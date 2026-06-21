@@ -344,7 +344,7 @@ NapCat_下载并解压包() {
 
     mkdir -p "${work_dir}/NapCat"
     if [[ ! -f "$zip_file" ]]; then
-        日志信息 "下载 NapCat 安装包（GitHub，失败会自动重试）..."
+        日志信息 "下载 NapCat 安装包（GitHub，国内自动走加速镜像）..."
         日志信息 "→ ${url}"
         网络_下载 "$url" "$zip_file" 3 || return 1
     else

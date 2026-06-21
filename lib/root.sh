@@ -33,6 +33,7 @@
     echo "${INSTALL_DIR:-/cs}"
 }
 
+# 项目安装根（work_dir）；脚本在 install_dir，业务项目在 work_dir
 仓鼠_工作目录() {
     local root="${1:-${HAMSTER_ROOT:-${INSTALL_DIR:-/cs}}}"
     local wd="${HAMSTER_WORK_DIR:-}" f
@@ -46,5 +47,5 @@
         [[ -n "$wd" ]] && { echo "$wd"; return; }
     done
 
-    echo "$root"
+    echo "/root/cs"
 }
