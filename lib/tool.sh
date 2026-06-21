@@ -2,22 +2,79 @@
 
 # ─── 工具通用框架 ──────────────────────────────────────────────
 
+# 加载 conf（去 CRLF，避免 source 报错与数组解析失败）
+_Conf_加载() {
+    local conf="$1"
+    [[ -f "$conf" ]] || return 1
+    # shellcheck source=/dev/null
+    source <(sed 's/\r$//' "$conf")
+}
+
+_工具_规范化Deps() {
+    local d cleaned=()
+
+    if ! declare -p TOOL_DEPS 2>/dev/null | grep -q 'declare -a'; then
+        local s="${TOOL_DEPS:-}"
+        s="${s//[$'\r'()]/}"
+        read -ra TOOL_DEPS <<< "$s"
+    fi
+
+    for d in "${TOOL_DEPS[@]}"; do
+        d="${d//$'\r'/}"
+        d="${d#"${d%%[![:space:]]*}"}"
+        d="${d%"${d##*[![:space:]]}"}"
+        [[ -n "$d" ]] && cleaned+=("$d")
+    done
+    TOOL_DEPS=("${cleaned[@]}")
+}
+
+# 安装目录跟随 config work_dir（与 install_dir 一致，避免装到 A 目录却去 B 目录检测）
+_工具_清除配置() {
+    unset TOOL_KIND TOOL_NAME TOOL_REPO TOOL_INSTALL_DIR TOOL_INSTALL_SUBDIR
+    unset TOOL_START_CMD TOOL_DEBUG_CMD NAPCAT_ZIP_URL NAPCAT_LAUNCHER NAPCAT_DEFAULT_PORT
+    unset CONFIG_DIR NAPCATBOT_FILE QQ_PACKAGE_JSON QQ_MAIN_ORIGINAL LOAD_NAPCAT_JS QQ_BIN
+    unset TOOL_DEPS
+    TOOL_DEPS=()
+}
+
+_工具_解析安装目录() {
+    local tool_name="$1"
+    local work_dir
+    work_dir="$(获取工作目录)"
+
+    if [[ -n "${TOOL_INSTALL_SUBDIR:-}" ]]; then
+        TOOL_INSTALL_DIR="${work_dir}/${TOOL_INSTALL_SUBDIR}"
+        return 0
+    fi
+
+    # NapCat 等 tool.conf 写死的绝对路径
+    if [[ -n "${TOOL_INSTALL_DIR:-}" && "${TOOL_INSTALL_DIR:0:1}" == "/" ]]; then
+        return 0
+    fi
+
+    TOOL_INSTALL_DIR="${work_dir}/${tool_name}"
+}
+
 # 加载工具配置
-tool_load() {
+工具_加载配置() {
     local tool_name="$1"
     local conf="$PROJECT_ROOT/tools/$tool_name/tool.conf"
-    
+
+    _工具_清除配置
+
     if [[ -f "$conf" ]]; then
-        source "$conf"
+        _Conf_加载 "$conf" || return 1
+        _工具_规范化Deps
+        _工具_解析安装目录 "$tool_name"
         return 0
-    else
-        log_error "工具配置文件不存在: $conf"
-        return 1
     fi
+
+    日志错误 "工具配置文件不存在: $conf"
+    return 1
 }
 
 # 版本比较: 0 = 相等, 1 = v1 > v2, 2 = v1 < v2
-tool_version_compare() {
+工具_版本比较() {
     local v1="$1"
     local v2="$2"
     
@@ -44,131 +101,173 @@ tool_version_compare() {
 }
 
 # 检查工具是否已安装
-tool_is_installed() {
+工具_是否已安装() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
-    
-    [[ -d "$TOOL_INSTALL_DIR" ]]
+    local common="$PROJECT_ROOT/tools/${tool_name}/common.sh"
+
+    工具_加载配置 "$tool_name" || return 1
+    [[ -f "$common" ]] && source "$common"
+
+    case "$tool_name" in
+        napcat) NapCat_是否就绪 ;;
+        *)
+            [[ -d "$TOOL_INSTALL_DIR" ]] || return 1
+            [[ -f "$TOOL_INSTALL_DIR/package.json" || -d "$TOOL_INSTALL_DIR/.git" || -f "$TOOL_INSTALL_DIR/app.js" ]]
+            ;;
+    esac
 }
 
-# 安装工具依赖
-tool_install_deps() {
+# 安装工具依赖（已满足的跳过，避免 AGT 等重复从零安装）
+工具_安装依赖() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
-    
-    log_info "正在安装依赖: ${TOOL_DEPS[*]}"
-    
+    local dep missing=()
+
+    工具_加载配置 "$tool_name" || return 1
+
     for dep in "${TOOL_DEPS[@]}"; do
         case "$dep" in
             node|nodejs)
-                pkg_ensure_node 18
+                包管理_验证Node环境 && 包管理_Node已满足 && _包管理_Pnpm就绪 && continue
+                missing+=("$dep")
                 ;;
             pnpm)
-                pkg_ensure_pnpm
+                command -v pnpm &>/dev/null && continue
+                missing+=("node")
                 ;;
             redis|redis-server)
-                pkg_ensure_redis
+                包管理_Redis已安装 && continue
+                missing+=("$dep")
                 ;;
             mongodb|mongod)
-                pkg_ensure_mongodb
+                包管理_MongoDB已安装 && continue
+                missing+=("$dep")
                 ;;
             chromium|chromium-browser)
-                pkg_ensure_chromium
-                ;;
-            linuxqq)
-                # 调用工具自定义的 hook
-                if declare -F tool_hook_install_linuxqq &>/dev/null; then
-                    tool_hook_install_linuxqq
-                else
-                    log_error "未知依赖: $dep，请在 tool.conf 中定义安装 hook"
-                    return 1
-                fi
+                包管理_Chromium已安装 && continue
+                missing+=("$dep")
                 ;;
             *)
-                pkg_install "$dep"
+                包管理_是否已安装 "$dep" && continue
+                missing+=("$dep")
                 ;;
+        esac
+    done
+
+    if [[ ${#missing[@]} -eq 0 ]]; then
+        日志信息 "依赖已满足: ${TOOL_DEPS[*]}"
+        return 0
+    fi
+
+    日志信息 "待安装依赖: ${missing[*]}"
+
+    for dep in "${missing[@]}"; do
+        case "$dep" in
+            node|nodejs|pnpm) 包管理_确保Node ;;
+            redis|redis-server) 包管理_确保Redis ;;
+            mongodb|mongod) 包管理_确保MongoDB ;;
+            chromium|chromium-browser) 包管理_确保Chromium ;;
+            *) 包管理_安装 "$dep" ;;
         esac
     done
 }
 
 # 克隆工具仓库
-tool_clone_repo() {
+工具_克隆仓库() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
+    工具_加载配置 "$tool_name" || return 1
     
     if [[ -d "$TOOL_INSTALL_DIR" ]]; then
-        log_info "目录已存在: $TOOL_INSTALL_DIR"
+        日志信息 "目录已存在: $TOOL_INSTALL_DIR"
         return 0
     fi
     
-    log_info "正在克隆仓库: $TOOL_REPO"
+    日志信息 "正在克隆仓库: $TOOL_REPO"
     mkdir -p "$(dirname "$TOOL_INSTALL_DIR")"
     
-    pkg_git_clone "$TOOL_REPO" "$TOOL_INSTALL_DIR"
+    包管理_Git克隆 "$TOOL_REPO" "$TOOL_INSTALL_DIR"
 }
 
 # 安装 npm 依赖
-tool_install_npm() {
+工具_安装Npm依赖() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
+    工具_加载配置 "$tool_name" || return 1
     
     if [[ ! -d "$TOOL_INSTALL_DIR" ]]; then
-        log_error "工具目录不存在: $TOOL_INSTALL_DIR"
+        日志错误 "工具目录不存在: $TOOL_INSTALL_DIR"
         return 1
     fi
     
     cd "$TOOL_INSTALL_DIR"
     
     if [[ -f "package.json" ]]; then
-        log_info "正在安装 npm 依赖..."
-        pkg_npm_install
+        日志信息 "正在安装 npm 依赖..."
+        包管理_Npm安装
     fi
 }
 
 # 标准安装流程
-tool_install() {
+工具_安装() {
     local tool_name="$1"
-    
-    log_info "开始安装 $tool_name..."
-    
-    tool_install_deps "$tool_name" || return 1
-    tool_clone_repo "$tool_name" || return 1
-    tool_install_npm "$tool_name" || return 1
-    
-    log_success "$tool_name 安装完成"
+    工具_加载配置 "$tool_name" || return 1
+
+    if [[ "$tool_name" == "napcat" ]]; then
+        日志错误 "NapCat 请使用 tools/napcat/install.sh 安装"
+        return 1
+    fi
+
+    日志信息 "开始安装 $tool_name..."
+    declare -F _界面_重置终端 &>/dev/null && _界面_重置终端
+    export HAMSTER_UI_TASK=1
+    工具_安装依赖 "$tool_name" || { unset HAMSTER_UI_TASK; return 1; }
+    工具_克隆仓库 "$tool_name" || { unset HAMSTER_UI_TASK; return 1; }
+    工具_安装Npm依赖 "$tool_name" || { unset HAMSTER_UI_TASK; return 1; }
+    unset HAMSTER_UI_TASK
+    declare -F _界面_重置终端 &>/dev/null && _界面_重置终端
+    日志成功 "$tool_name 安装完成"
 }
 
 # 启动工具
-tool_start() {
+工具_启动() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
-    
-    if [[ ! -d "$TOOL_INSTALL_DIR" ]]; then
-        log_error "工具未安装: $tool_name"
+    local log_file pid
+
+    工具_加载配置 "$tool_name" || return 1
+
+    if ! 工具_是否已安装 "$tool_name"; then
+        日志错误 "工具未安装: $tool_name"
         return 1
     fi
-    
-    cd "$TOOL_INSTALL_DIR"
-    
-    log_info "启动 $tool_name..."
-    nohup bash -c "$TOOL_START_CMD" > /dev/null 2>&1 &
-    local pid=$!
+
+    工具_安装依赖 "$tool_name" || return 1
+
+    cd "$TOOL_INSTALL_DIR" || return 1
+    log_file="$TOOL_INSTALL_DIR/.hamster-start.log"
+
+    日志信息 "启动 $tool_name..."
+    nohup bash -lc "cd '$TOOL_INSTALL_DIR' && exec $TOOL_START_CMD" >>"$log_file" 2>&1 &
+    pid=$!
     echo "$pid" > "$TOOL_INSTALL_DIR/.pid"
-    
-    sleep 1
+
+    sleep 2
     if kill -0 "$pid" 2>/dev/null; then
-        log_success "$tool_name 已启动 (PID: $pid)"
-    else
-        rm -f "$TOOL_INSTALL_DIR/.pid"
-        log_error "$tool_name 启动失败"
-        return 1
+        日志成功 "$tool_name 已启动 (PID: $pid)"
+        return 0
     fi
+
+    rm -f "$TOOL_INSTALL_DIR/.pid"
+    日志错误 "$tool_name 启动失败"
+    if [[ -s "$log_file" ]]; then
+        tail -n 3 "$log_file" | while IFS= read -r line; do
+            日志错误 "  $line"
+        done
+    fi
+    return 1
 }
 
 # 停止工具
-tool_stop() {
+工具_停止() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
+    工具_加载配置 "$tool_name" || return 1
     
     local pid_file="$TOOL_INSTALL_DIR/.pid"
     
@@ -177,57 +276,29 @@ tool_stop() {
         if kill -0 "$pid" 2>/dev/null; then
             kill "$pid"
             rm -f "$pid_file"
-            log_success "$tool_name 已停止"
+            日志成功 "$tool_name 已停止"
         else
             rm -f "$pid_file"
-            log_warn "进程已不存在，清理 PID 文件"
+            日志警告 "进程已不存在，清理 PID 文件"
         fi
     else
-        log_warn "$tool_name 未运行"
+        日志警告 "$tool_name 未运行"
     fi
-}
-
-# 检查工具状态
-tool_status() {
-    local tool_name="$1"
-    tool_load "$tool_name" || return 1
-    
-    local pid_file="$TOOL_INSTALL_DIR/.pid"
-    
-    if [[ -f "$pid_file" ]]; then
-        local pid=$(cat "$pid_file")
-        if kill -0 "$pid" 2>/dev/null; then
-            echo "running"
-            return 0
-        fi
-    fi
-    
-    echo "stopped"
-    return 1
-}
-
-# 重启工具
-tool_restart() {
-    local tool_name="$1"
-    
-    tool_stop "$tool_name"
-    sleep 1
-    tool_start "$tool_name"
 }
 
 # 更新工具
-tool_update() {
+工具_更新() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
+    工具_加载配置 "$tool_name" || return 1
     
     if [[ ! -d "$TOOL_INSTALL_DIR" ]]; then
-        log_error "工具未安装: $tool_name"
+        日志错误 "工具未安装: $tool_name"
         return 1
     fi
     
     cd "$TOOL_INSTALL_DIR"
     
-    log_info "正在更新 $tool_name..."
+    日志信息 "正在更新 $tool_name..."
     
     # 备份配置
     if [[ -f ".env" ]]; then
@@ -239,24 +310,24 @@ tool_update() {
     
     # 重新安装依赖
     if [[ -f "package.json" ]]; then
-        pkg_npm_install
+        包管理_Npm安装
     fi
     
-    log_success "$tool_name 更新完成"
+    日志成功 "$tool_name 更新完成"
 }
 
 # 卸载工具
-tool_uninstall() {
+工具_卸载() {
     local tool_name="$1"
-    tool_load "$tool_name" || return 1
+    工具_加载配置 "$tool_name" || return 1
     
-    tool_stop "$tool_name" 2>/dev/null
+    工具_停止 "$tool_name" 2>/dev/null
     
     if [[ -d "$TOOL_INSTALL_DIR" ]]; then
-        log_info "正在删除 $TOOL_INSTALL_DIR..."
+        日志信息 "正在删除 $TOOL_INSTALL_DIR..."
         rm -rf "$TOOL_INSTALL_DIR"
-        log_success "$tool_name 已卸载"
+        日志成功 "$tool_name 已卸载"
     else
-        log_warn "工具目录不存在"
+        日志警告 "工具目录不存在"
     fi
 }

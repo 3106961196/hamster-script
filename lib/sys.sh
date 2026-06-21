@@ -2,7 +2,7 @@
 
 # 系统信息
 
-sys_get_info() {
+系统_获取信息() {
     echo "=== 系统信息 ==="
     echo ""
     
@@ -39,9 +39,9 @@ sys_get_info() {
     uptime
 }
 
-sys_get_cpu_usage() {
+系统_获取CPU使用() {
     local cpu_usage
-    if command_exists top; then
+    if 命令存在 top; then
         cpu_usage=$(top -bn1 | grep "Cpu(s)" | awk '{print $2}' | cut -d'%' -f1)
         echo "$cpu_usage%"
     else
@@ -49,7 +49,7 @@ sys_get_cpu_usage() {
     fi
 }
 
-sys_get_memory_usage() {
+系统_获取内存使用() {
     local mem_info
     mem_info=$(free -m | grep "Mem:")
     local total=$(echo "$mem_info" | awk '{print $2}')
@@ -58,32 +58,32 @@ sys_get_memory_usage() {
     echo "${used}MB / ${total}MB (${percent}%)"
 }
 
-sys_get_disk_usage() {
+系统_获取磁盘使用() {
     local path="${1:-/}"
     df -h "$path" | tail -1 | awk '{print $3 " / " $2 " (" $5 " 已用)"}'
 }
 
 # 时区管理
 
-sys_set_timezone() {
+系统_设置时区() {
     local timezone="$1"
     if [[ -f "/usr/share/zoneinfo/$timezone" ]]; then
         ln -sf "/usr/share/zoneinfo/$timezone" /etc/localtime
         echo "$timezone" > /etc/timezone
-        log_success "时区已设置为: $timezone"
+        日志成功 "时区已设置为: $timezone"
     else
-        log_error "无效的时区: $timezone"
+        日志错误 "无效的时区: $timezone"
         return 1
     fi
 }
 
-sys_get_timezone() {
+系统_获取时区() {
     timedatectl show 2>/dev/null | grep Timezone | cut -d= -f2 || cat /etc/timezone 2>/dev/null
 }
 
-sys_get_timezone_from_api() {
+系统_从API获取时区() {
     local timezone
-    if command_exists curl; then
+    if 命令存在 curl; then
         timezone=$(curl -s http://ip-api.com/json | grep -oP '"timezone":"\K[^"]+')
         if [[ -n "$timezone" ]]; then
             echo "$timezone"
@@ -94,36 +94,36 @@ sys_get_timezone_from_api() {
     return 1
 }
 
-sys_sync_time() {
+系统_同步时间() {
     # 先通过API获取正确的时区
     local api_timezone
-    api_timezone=$(sys_get_timezone_from_api)
+    api_timezone=$(系统_从API获取时区)
     if [[ -n "$api_timezone" ]]; then
-        sys_set_timezone "$api_timezone"
+        系统_设置时区 "$api_timezone"
     fi
     
-    if command_exists timedatectl; then
+    if 命令存在 timedatectl; then
         timedatectl set-ntp true
-        log_success "已启用 NTP 时间同步"
-    elif command_exists ntpdate; then
+        日志成功 "已启用 NTP 时间同步"
+    elif 命令存在 ntpdate; then
         ntpdate pool.ntp.org
     else
-        log_error "未找到时间同步工具"
+        日志错误 "未找到时间同步工具"
         return 1
     fi
 }
 
 # 系统清理
 
-sys_clean_journal() {
+系统_清理日志() {
     local days="${1:-7}"
-    if command_exists journalctl; then
+    if 命令存在 journalctl; then
         journalctl --vacuum-time="${days}d"
-        log_success "已清理 ${days} 天前的日志"
+        日志成功 "已清理 ${days} 天前的日志"
     fi
 }
 
-sys_clean_temp() {
+系统_清理临时() {
     local temp_dirs=("/tmp" "/var/tmp")
     for dir in "${temp_dirs[@]}"; do
         if [[ -d "$dir" ]]; then
@@ -131,5 +131,5 @@ sys_clean_temp() {
             find "$dir" -type d -empty -delete 2>/dev/null
         fi
     done
-    log_success "已清理临时文件"
+    日志成功 "已清理临时文件"
 }

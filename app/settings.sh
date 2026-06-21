@@ -1,25 +1,25 @@
 #!/bin/bash
 
-settings_menu() {
+设置_菜单() {
     while true; do
         local choice
-        choice=$(ui_submenu "⚙️ 系统设置" "请选择功能:" \
+        choice=$(界面子菜单 "⚙️ 系统设置" "请选择功能:" \
             "1" "查看当前配置" \
             "2" "编辑配置文件" \
             "3" "快捷设置" \
             "4" "重置配置")
         
         case "$choice" in
-            1) settings_show ;;
-            2) settings_edit ;;
-            3) settings_quick ;;
-            4) settings_reset ;;
+            1) 设置_显示 ;;
+            2) 设置_编辑 ;;
+            3) 设置_快捷 ;;
+            4) 设置_重置 ;;
             b) break ;;
         esac
     done
 }
 
-settings_show() {
+设置_显示() {
     local content
     content=$({
         echo "📁 路径配置:"
@@ -37,10 +37,10 @@ settings_show() {
         echo "  根目录: $PROJECT_ROOT"
     })
     
-    ui_text "$content" "⚙️ 当前配置"
+    界面文本 "$content" "⚙️ 当前配置"
 }
 
-settings_edit() {
+设置_编辑() {
     local config_file="${CONFIG[config_dir]}/config.yaml"
     
     if [[ ! -f "$config_file" ]]; then
@@ -58,45 +58,45 @@ settings_edit() {
     done
     
     if [[ -z "$editor" ]]; then
-        ui_msg "未找到可用的编辑器\n请安装 vim 或 nano" "错误"
+        界面消息 "未找到可用的编辑器\n请安装 vim 或 nano" "错误"
         return
     fi
     
-    ui_clear
+    界面清屏
     $editor "$config_file"
     
-    ui_msg "配置已保存，重启脚本后生效" "提示"
+    界面消息 "配置已保存，重启脚本后生效" "提示"
 }
 
-settings_quick() {
+设置_快捷() {
     while true; do
         local choice
-        choice=$(ui_submenu "⚙️ 快捷设置" "请选择要修改的配置:" \
+        choice=$(界面子菜单 "⚙️ 快捷设置" "请选择要修改的配置:" \
             "1" "修改日志目录" \
             "2" "修改备份目录" \
             "3" "修改临时目录")
         
         case "$choice" in
-            1) settings_set_path "log_dir" "日志目录" ;;
-            2) settings_set_path "backup_dir" "备份目录" ;;
-            3) settings_set_path "temp_dir" "临时目录" ;;
+            1) 设置_设置路径 "log_dir" "日志目录" ;;
+            2) 设置_设置路径 "backup_dir" "备份目录" ;;
+            3) 设置_设置路径 "temp_dir" "临时目录" ;;
             b) break ;;
         esac
     done
 }
 
-settings_set_path() {
+设置_设置路径() {
     local key="$1"
     local name="$2"
     local current="${CONFIG[$key]}"
     
     local new_value
-    new_value=$(ui_input "$name" "$current")
+    new_value=$(界面输入 "$name" "$current")
     
     [[ -z "$new_value" ]] && return
     
     if [[ ! -d "$new_value" ]]; then
-        if ui_confirm "目录 $new_value 不存在，是否创建？"; then
+        if 界面确认 "目录 $new_value 不存在，是否创建？"; then
             mkdir -p "$new_value"
         else
             return
@@ -104,15 +104,15 @@ settings_set_path() {
     fi
     
     CONFIG[$key]="$new_value"
-    save_user_config
+    保存用户配置
     
-    ui_success "$name 已修改为: $new_value"
+    界面成功 "$name 已修改为: $new_value"
 }
 
-settings_reset() {
-    if ui_confirm "确定要重置所有配置吗？\n\n这将删除用户自定义配置，恢复为默认值"; then
+设置_重置() {
+    if 界面确认 "确定要重置所有配置吗？\n\n这将删除用户自定义配置，恢复为默认值"; then
         local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
         rm -f "$user_config" 2>/dev/null
-        ui_success "配置已重置，重启脚本后生效"
+        界面成功 "配置已重置，重启脚本后生效"
     fi
 }

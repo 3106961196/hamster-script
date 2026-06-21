@@ -1,17 +1,36 @@
 #!/bin/bash
 
-if [[ "$OSTYPE" == "msys" || "$OSTYPE" == "cygwin" || "$OSTYPE" == "win32" ]]; then
-    echo "错误：此脚本需要在 Linux 环境中运行"
-    exit 1
-fi
+# WSL: /mnt/c copies may leave CRLF — fix /cs before sourcing anything
+_hamster_fix_crlf_if_needed() {
+    local root entry
+    for root in "/cs" "$(cd "$(dirname "${BASH_SOURCE[0]}")/.." 2>/dev/null && pwd)"; do
+        [[ -f "$root/lib/bin_entry.sh" ]] || continue
+        entry="$root/lib/bin_entry.sh"
+        grep -q $'\r' "$entry" 2>/dev/null || return 0
+        find "$root" -type f \( -name '*.sh' -o -path '*/bin/*' -o -name '*.conf' \) \
+            -exec sed -i 's/\r$//' {} + 2>/dev/null || true
+        chmod +x "$root"/bin/* 2>/dev/null || true
+        if [[ -w /usr/local/bin && -f "$root/bin/cs" ]]; then
+            sed 's/\r$//' "$root/bin/cs" > /usr/local/bin/cs && chmod 755 /usr/local/bin/cs
+            [[ -f "$root/bin/nt" ]] && sed 's/\r$//' "$root/bin/nt" > /usr/local/bin/nt && chmod 755 /usr/local/bin/nt
+        fi
+        return 0
+    done
+}
+_hamster_fix_crlf_if_needed
 
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
-export PROJECT_ROOT
+_entry=""
+for _p in "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/bin_entry.sh" "/cs/lib/bin_entry.sh"; do
+    [[ -f "$_p" ]] && { _entry="$_p"; break; }
+done
+[[ -z "$_entry" ]] && { echo "错误：未找到 bin_entry.sh"; exit 1; }
 
-source "$PROJECT_ROOT/lib/core.sh"
-init_core
+# shellcheck source=/dev/null
+source "$_entry"
+仓鼠_bin引导 "${BASH_SOURCE[0]}"
+初始化核心
 
-_show_help() {
+_显示帮助() {
     echo "用法: cs [命令]"
     echo ""
     echo "命令:"
@@ -22,35 +41,33 @@ _show_help() {
     echo "  help, -h    查看帮助"
 }
 
-main() {
+程序入口() {
     if [[ $# -gt 0 ]]; then
         case "$1" in
             r|update)
-                load_module "update"
-                update_do
+                加载模块 "update"
+                更新_执行
                 ;;
             tmux)
-                export HAMSTER_ROOT="$PROJECT_ROOT"
                 exec bash "$PROJECT_ROOT/config/tmux/tmux.sh" "${@:2}"
                 ;;
             version)
                 echo "${PROJECT_NAME} v${PROJECT_VERSION}"
                 ;;
             help|-h|--help)
-                _show_help
+                _显示帮助
                 ;;
             *)
                 echo "未知命令: $1"
-                echo ""
-                _show_help
+                _显示帮助
                 exit 1
                 ;;
         esac
         exit 0
     fi
 
-    load_module "menu"
-    main_menu
+    加载模块 "menu"
+    主菜单
 }
 
-main "$@"
+程序入口 "$@"

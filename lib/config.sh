@@ -6,7 +6,7 @@
 _CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir work_dir)
 
 # YAML 解析
-parse_yaml() {
+解析YAML() {
     local yaml_file="$1"
     local prefix="${2:-}"
     
@@ -86,29 +86,29 @@ parse_yaml() {
 }
 
 # 加载配置文件（默认 → 系统 → 用户，后者覆盖前者）
-config_load() {
+加载配置() {
     local default_config="$PROJECT_ROOT/config/config.yaml"
     local system_config="/etc/hamster-scripts/config.yaml"
     local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
     local loaded=0
     
     if [[ -f "$default_config" ]]; then
-        parse_yaml "$default_config"
+        解析YAML "$default_config"
         loaded=1
     fi
     
     if [[ -f "$system_config" ]]; then
-        parse_yaml "$system_config"
+        解析YAML "$system_config"
         loaded=1
     fi
     
     if [[ -f "$user_config" ]]; then
-        parse_yaml "$user_config"
+        解析YAML "$user_config"
         loaded=1
     fi
     
     if [[ $loaded -eq 0 ]]; then
-        log_warn "未找到配置文件，使用内置默认值"
+        日志警告 "未找到配置文件，使用内置默认值"
         return 1
     fi
     
@@ -116,7 +116,7 @@ config_load() {
 }
 
 # 获取配置值
-config_get() {
+获取配置() {
     local key="$1"
     local default="${2:-}"
     
@@ -124,17 +124,22 @@ config_get() {
 }
 
 # 获取安装目录
-get_install_dir() {
-    config_get "install_dir" "/cs"
+获取安装目录() {
+    获取配置 "install_dir" "/cs"
 }
 
-# 获取工作目录
-get_work_dir() {
-    config_get "work_dir" "/root/cs"
+# 获取工作目录（项目/工具安装根；默认与 install_dir 一致）
+获取工作目录() {
+    local wd
+    wd=$(获取配置 "work_dir" "")
+    if [[ -z "$wd" ]]; then
+        wd=$(获取配置 "install_dir" "/cs")
+    fi
+    echo "$wd"
 }
 
 # 设置配置值
-config_set() {
+设置配置() {
     local key="$1"
     local value="$2"
     
@@ -142,9 +147,9 @@ config_set() {
 }
 
 # 保存用户覆盖配置
-save_user_config() {
+保存用户配置() {
     local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
-    ensure_dir "$(dirname "$user_config")"
+    确保目录 "$(dirname "$user_config")"
     
     {
         echo "# Hamster Script 用户配置覆盖"
@@ -158,10 +163,10 @@ save_user_config() {
 }
 
 # 保存配置到文件
-config_save() {
+保存配置() {
     local config_file="${1:-$PROJECT_ROOT/config/config.yaml}"
     
-    ensure_dir "$(dirname "$config_file")"
+    确保目录 "$(dirname "$config_file")"
     
     > "$config_file"
     

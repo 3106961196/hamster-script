@@ -1,37 +1,39 @@
 #!/bin/bash
 
-load_module "package"
-load_module "project"
-load_module "system"
-load_module "backup"
-load_module "monitor"
-load_module "update"
-load_module "settings"
+加载模块 "package"
+加载模块 "env"
+加载模块 "project"
+加载模块 "system"
+加载模块 "backup"
+加载模块 "monitor"
+加载模块 "update"
+加载模块 "settings"
 
-main_menu() {
+主菜单() {
+    UI_BACKTITLE="Hamster Script v${PROJECT_VERSION:-}"
     while true; do
         local choice
-        choice=$(ui_menu "🐹 Hamster Script" "请选择功能:" \
-            "1" "📦 软件管理" \
-            "2" "📁 项目列表" \
-            "3" "⚙️ 系统管理" \
-            "4" "💾 备份恢复" \
-            "5" "📊 系统监控" \
-            "6" "🔄 脚本更新" \
-            "7" "⚙️ 系统设置" \
-            "q" "🚪 退出")
-        
+        choice=$(界面菜单 "Hamster Script" "请选择功能模块:" \
+            "1" "软件管理" \
+            "2" "项目列表" \
+            "3" "系统管理" \
+            "4" "备份恢复" \
+            "5" "系统监控" \
+            "6" "脚本更新" \
+            "7" "系统设置" \
+            "q" "退出程序")
+
         case "$choice" in
-            1) package_menu ;;
-            2) project_menu ;;
-            3) system_menu ;;
-            4) backup_menu ;;
-            5) monitor_menu ;;
-            6) update_menu ;;
-            7) settings_menu ;;
-            q) 
-                ui_clear
-                echo "再见！👋"
+            1) 软件包_菜单 ;;
+            2) 项目_菜单 ;;
+            3) 系统管理_菜单 ;;
+            4) 备份_菜单 ;;
+            5) 监控_菜单 ;;
+            6) 更新_菜单 ;;
+            7) 设置_菜单 ;;
+            q|"")
+                界面清屏
+                echo "再见！"
                 exit 0
                 ;;
         esac

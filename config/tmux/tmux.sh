@@ -1,64 +1,29 @@
 #!/bin/bash
-# Hamster tmux 桌面入口（对齐 xrk-projects-scripts/body/tmux.sh）
 
-INSTALL_DIR="${HAMSTER_ROOT:-$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)}"
+# shellcheck source=/dev/null
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/common.sh"
+Tmux_引导 "${BASH_SOURCE[0]}" || exit 1
+
 SESSION_NAME="${HAMSTER_TMUX_SESSION:-🐹 Hamster Script}"
-TMUX_CONF="${HOME}/.tmux.conf"
+TMUX_HOME="$(Tmux_用户主目录)" || exit 1
+TMUX_CONF="${TMUX_HOME}/.tmux/main.conf"
+export HAMSTER_TMUX_CONF="$TMUX_CONF"
 read -ra HAMSTER_TMUX_WINDOWS <<< "${HAMSTER_TMUX_WINDOW_NAMES:-甲 乙}"
 
-_hamster_work_dir() {
-    if [[ -n "${HAMSTER_WORK_DIR:-}" ]]; then
-        echo "$HAMSTER_WORK_DIR"
-        return
-    fi
-    if [[ -f /etc/hamster-scripts/config.yaml ]]; then
-        local wd
-        wd=$(grep -E '^work_dir:' /etc/hamster-scripts/config.yaml 2>/dev/null | awk '{print $2}')
-        if [[ -n "$wd" ]]; then
-            echo "$wd"
-            return
-        fi
-    fi
-    echo "/root/cs"
-}
-
-WORK_DIR="$(_hamster_work_dir)"
+WORK_DIR="${HAMSTER_WORK_DIR:-}"
+if [[ -z "$WORK_DIR" && -f /etc/hamster-scripts/config.yaml ]]; then
+    WORK_DIR=$(grep -E '^work_dir:' /etc/hamster-scripts/config.yaml 2>/dev/null | awk '{print $2}')
+fi
+WORK_DIR="${WORK_DIR:-$INSTALL_DIR}"
 mkdir -p "$WORK_DIR"
 
-_tmux_usage() {
-    cat <<EOF
-用法: hamster-tmux [选项]
-  (无参数)  进入或创建「${SESSION_NAME}」
-  --setup   安装 tmux 并写入配置
-  --status  检查环境
-  -h        本帮助
-EOF
-}
-
-_tmux_ensure_utf8() {
-    case "${LANG:-}" in
-        *UTF-8*|*utf8*) ;;
-        *) export LANG=zh_CN.UTF-8 LC_ALL=zh_CN.UTF-8 ;;
-    esac
-}
-
-_tmux_conf_ok() {
-    [[ -f "$TMUX_CONF" ]] && grep -q 'Hamster Script tmux' "$TMUX_CONF" \
-        && [[ -f "$HOME/.tmux/hamster-menus.conf" ]]
-}
-
-_tmux_reload_config() {
+_Tmux重载配置() {
     [[ -f "$TMUX_CONF" ]] || return 1
     tmux info &>/dev/null || tmux -f "$TMUX_CONF" start-server 2>/dev/null || return 1
     tmux source-file "$TMUX_CONF" 2>/dev/null || return 1
 }
 
-_tmux_repair_config() {
-    [[ -f "$INSTALL_DIR/config/tmux/setup.sh" ]] \
-        && bash "$INSTALL_DIR/config/tmux/setup.sh" --link-only
-}
-
-_tmux_apply_window_names() {
+_Tmux应用窗口名() {
     local session="$1" i
     tmux has-session -t "$session" 2>/dev/null || return 0
     for i in "${!HAMSTER_TMUX_WINDOWS[@]}"; do
@@ -66,36 +31,17 @@ _tmux_apply_window_names() {
     done
 }
 
-_tmux_session_usable() {
+_Tmux会话可用() {
     local s="$1" n
     tmux has-session -t "$s" 2>/dev/null || return 1
     n=$(tmux list-windows -t "$s" 2>/dev/null | wc -l)
     [[ "${n:-0}" -ge 2 ]]
 }
 
-_tmux_status() {
-    echo "tmux: $(command -v tmux >/dev/null && tmux -V || echo 未安装)"
-    echo "配置: $TMUX_CONF $(_tmux_conf_ok && echo OK || echo 未就绪)"
-    echo "工作目录: $WORK_DIR"
-    tmux has-session -t "$SESSION_NAME" 2>/dev/null \
-        && echo "会话: $SESSION_NAME 已存在" || echo "会话: 未创建"
-}
-
-_tmux_ensure_env() {
-    command -v tmux &>/dev/null || {
-        echo "[hamster-tmux] 未安装，请运行 hamster-tmux --setup" >&2
-        return 1
-    }
-    _tmux_conf_ok || _tmux_repair_config || {
-        echo "[hamster-tmux] 配置未就绪，请运行 hamster-tmux --setup" >&2
-        return 1
-    }
-}
-
-_tmux_create_layout() {
+_Tmux创建布局() {
     local s="$SESSION_NAME"
-    if _tmux_session_usable "$s"; then
-        _tmux_apply_window_names "$s"
+    if _Tmux会话可用 "$s"; then
+        _Tmux应用窗口名 "$s"
         return 0
     fi
     tmux has-session -t "$s" 2>/dev/null && tmux kill-session -t "$s" 2>/dev/null || true
@@ -106,27 +52,31 @@ _tmux_create_layout() {
     tmux new-window -t "$s:1" -n "${HAMSTER_TMUX_WINDOWS[1]:-乙}" -c "$WORK_DIR" "exec bash"
     tmux split-window -v -t "$s:1" -c "$WORK_DIR" "exec bash"
     tmux select-window -t "$s:0"
-    _tmux_apply_window_names "$s"
+    _Tmux应用窗口名 "$s"
 }
 
-_tmux_enter() {
+_Tmux进入() {
     local cur
-    _tmux_ensure_utf8
-    _tmux_ensure_env || exit 1
-    _tmux_reload_config || true
-    _tmux_create_layout || exit 1
-    _tmux_reload_config || true
+    Tmux_确保UTF8
+    command -v tmux &>/dev/null || {
+        echo "[hamster-tmux] 未安装，请运行 hamster-tmux --setup" >&2
+        exit 1
+    }
+    Tmux_配置就绪 "$TMUX_HOME" || Tmux_链接配置 "$INSTALL_DIR" || {
+        echo "[hamster-tmux] 配置未就绪，请运行 hamster-tmux --setup" >&2
+        exit 1
+    }
+    _Tmux重载配置 || true
+    _Tmux创建布局 || exit 1
+    _Tmux重载配置 || true
 
     if [[ -n "$TMUX" ]]; then
         cur=$(tmux display-message -p '#S' 2>/dev/null || true)
-        _tmux_apply_window_names "$SESSION_NAME"
+        _Tmux应用窗口名 "$SESSION_NAME"
         tmux display-message "配置已刷新" 2>/dev/null || true
-        [[ "$cur" == "$SESSION_NAME" ]] && {
-            echo "[hamster-tmux] 已在 $SESSION_NAME，配置已刷新"
-            return 0
-        }
+        [[ "$cur" == "$SESSION_NAME" ]] && exit 0
         tmux switch-client -t "$SESSION_NAME"
-        return 0
+        exit 0
     fi
 
     echo "[hamster-tmux] 进入 $SESSION_NAME …"
@@ -134,9 +84,27 @@ _tmux_enter() {
 }
 
 case "${1:-}" in
-    -h|--help)  _tmux_usage; exit 0 ;;
-    --status)   _tmux_status; exit 0 ;;
-    --setup)    bash "$INSTALL_DIR/config/tmux/setup.sh"; exit $? ;;
+    -h|--help)
+        cat <<EOF
+用法: hamster-tmux [选项]
+  (无参数)  进入或创建「${SESSION_NAME}」
+  --setup   安装 tmux 并写入配置
+  --status  检查环境
+  -h        本帮助
+EOF
+        exit 0
+        ;;
+    --status)
+        echo "tmux: $(command -v tmux >/dev/null && tmux -V || echo 未安装)"
+        echo "配置: $TMUX_CONF $(Tmux_配置就绪 "$TMUX_HOME" && echo OK || echo 未就绪)"
+        echo "工作目录: $WORK_DIR"
+        tmux has-session -t "$SESSION_NAME" 2>/dev/null \
+            && echo "会话: $SESSION_NAME 已存在" || echo "会话: 未创建"
+        exit 0
+        ;;
+    --setup)
+        exec bash "$INSTALL_DIR/config/tmux/setup.sh"
+        ;;
 esac
 
-_tmux_enter
+_Tmux进入
