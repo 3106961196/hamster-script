@@ -175,7 +175,6 @@ EOF
 
 NapCat_启动QQ() {
     local qq_num="$1"
-    local bg_mode="${2:-false}"
     _NapCat_加载配置
 
     if [[ ! -f "$NAPCATBOT_FILE" ]] \
@@ -184,14 +183,9 @@ NapCat_启动QQ() {
         return 1
     fi
 
-    local port
+    local port qq_cmd="${QQ_BIN}"
     port=$(NapCat_获取QQ端口 "$qq_num")
     [[ -z "$port" ]] && port="$NAPCAT_DEFAULT_PORT"
-
-    if NapCat_QQ是否运行 "$qq_num"; then
-        echo "QQ $qq_num 已在运行中（端口: $port）"
-        return 0
-    fi
 
     if ! NapCat_是否就绪; then
         echo "NapCat 未正确安装，请先运行安装脚本" >&2
@@ -200,21 +194,10 @@ NapCat_启动QQ() {
 
     NapCat_生成配置 "$qq_num" "$port"
     export DISPLAY="${DISPLAY:-:99}"
-
-    local qq_cmd="${QQ_BIN}"
     command -v qq &>/dev/null && qq_cmd="qq"
 
-    if [[ "$bg_mode" == "true" ]]; then
-        nohup xvfb-run -a "$qq_cmd" --no-sandbox -q "$qq_num" >/dev/null 2>&1 &
-        sleep 2
-        if NapCat_QQ是否运行 "$qq_num"; then
-            echo "QQ $qq_num 已在后台启动（端口: $port）"
-            return 0
-        fi
-        echo "QQ $qq_num 启动失败" >&2
-        return 1
-    fi
-
+    clear 2>/dev/null || true
+    killall dialog 2>/dev/null || true
     echo "正在启动 QQ $qq_num（端口: $port）..."
     exec xvfb-run -a "$qq_cmd" --no-sandbox -q "$qq_num"
 }

@@ -10,25 +10,6 @@ NapCat_加载配置
 
 UI_BACKTITLE="NapCat · ${UI_BACKTITLE:-Hamster Script}"
 
-_NapCat_状态摘要() {
-    local ver count running
-    if NapCat_是否就绪; then
-        ver=$(jq -r '.version' "${TOOL_INSTALL_DIR}/package.json" 2>/dev/null)
-        [[ "$ver" == "null" || -z "$ver" ]] && ver="?"
-        count=$(jq 'length' "$NAPCATBOT_FILE" 2>/dev/null || echo 0)
-        running=$(NapCat_获取运行中QQ | grep -c . 2>/dev/null || echo 0)
-        printf '状态: 已就绪 v%s | 账号 %s | 运行 %s' "$ver" "$count" "$running"
-    elif NapCat_是否已安装; then
-        printf '状态: 已安装但未完成注入，请重装'
-    else
-        printf '状态: 未安装'
-    fi
-}
-
-_NapCat_菜单提示() {
-    printf '%s\n\n请选择操作:' "$(_NapCat_状态摘要)"
-}
-
 _NapCat_添加或更新QQ() {
     NapCat_添加或更新QQ "$1" "$2" || { 界面警告 "写入 Napcatbot 失败"; return 1; }
     界面完成 "已添加 QQ $1（端口: $2）"
@@ -39,43 +20,13 @@ _NapCat_移除QQ() {
     界面完成 "已删除 QQ $1 的所有配置"
 }
 
-_NapCat_启动QQ() {
-    local qq_num="$1" bg_mode="${2:-false}" port
-    port=$(NapCat_获取QQ端口 "$qq_num")
-    [[ -z "$port" ]] && port="${NAPCAT_DEFAULT_PORT:-2537}"
-
-    if NapCat_QQ是否运行 "$qq_num"; then
-        界面提示 "QQ $qq_num 已在运行中\n端口: $port" "注意"
-        return 0
-    fi
-    if ! NapCat_是否就绪; then
-        界面警告 "NapCat 未正确安装\n请先在项目列表中安装"
-        return 1
-    fi
-
-    if [[ "$bg_mode" == "true" ]]; then
-        if NapCat_启动QQ "$qq_num" true; then
-            界面完成 "QQ $qq_num 已在后台启动\n端口: $port"
-        else
-            界面警告 "QQ $qq_num 启动失败\n请检查 xvfb / QQ 安装"
-        fi
-    else
-        NapCat_启动QQ "$qq_num" false
-    fi
-}
-
 _NapCat_停止QQ() {
     local qq_num="$1"
-    if ! NapCat_QQ是否运行 "$qq_num"; then
-        界面提示 "QQ $qq_num 未在运行"
-        return 0
-    fi
-    if NapCat_停止QQ "$qq_num"; then
-        界面完成 "QQ $qq_num 已停止"
-    else
+    NapCat_停止QQ "$qq_num" || {
         界面警告 "QQ $qq_num 停止失败\n请手动检查进程"
         return 1
-    fi
+    }
+    界面完成 "QQ $qq_num 已停止"
 }
 
 _NapCat_选择QQ() {
@@ -94,11 +45,10 @@ _NapCat_选择QQ() {
         return 1
     fi
 
-    local items=() qq port status display
+    local items=() qq port display
     while IFS=$'\t' read -r qq port; do
         [[ -z "$qq" ]] && continue
-        if NapCat_QQ是否运行 "$qq"; then status="运行中"; else status="已停止"; fi
-        display="QQ ${qq}  端口 ${port}  [${status}]"
+        display="QQ ${qq}  端口 ${port}"
         items+=("$qq" "$display")
     done < <(jq -r '.[] | "\(.qq)\t\(.port)"' "$NAPCATBOT_FILE" 2>/dev/null)
 
@@ -130,8 +80,6 @@ _NapCat_交互添加QQ() {
     done
 
     _NapCat_添加或更新QQ "$qq_num" "$port" || return 1
-    界面确认 "QQ $qq_num 已添加（端口 $port）\n是否立即后台启动？" "启动确认" \
-        && _NapCat_启动QQ "$qq_num" true
 }
 
 _NapCat_交互修改QQ() {
@@ -166,8 +114,19 @@ _NapCat_交互删除QQ() {
         && _NapCat_移除QQ "$_PICKED_QQ"
 }
 
-_NapCat_交互启动QQ() { _NapCat_选择QQ "启动 QQ" || return 0; _NapCat_启动QQ "$_PICKED_QQ" true; }
-_NapCat_交互停止QQ() { _NapCat_选择QQ "停止 QQ" || return 0; _NapCat_停止QQ "$_PICKED_QQ"; }
+_NapCat_交互启动QQ() {
+    _NapCat_选择QQ "启动 QQ" || return 0
+    NapCat_是否就绪 || {
+        界面警告 "NapCat 未正确安装\n请先在项目列表中安装"
+        return 1
+    }
+    NapCat_启动QQ "$_PICKED_QQ"
+}
+
+_NapCat_交互停止QQ() {
+    _NapCat_选择QQ "停止 QQ" || return 0
+    _NapCat_停止QQ "$_PICKED_QQ"
+}
 
 _NapCat_重装项目() {
     界面确认 "重装 NapCat 将：\n\n· 停止所有 QQ 进程\n· 重新下载并安装\n· 保留 Napcatbot 账号配置\n\n确定继续？" "重装确认" || return 0
@@ -225,7 +184,7 @@ _NapCat_显示全部状态() {
 _NapCat_管理() {
     while true; do
         local choice
-        choice=$(界面子菜单 "NapCat 管理" "$(_NapCat_菜单提示)" \
+        choice=$(界面子菜单 "NapCat 管理" "请选择操作:" \
             "1" "启动 QQ" "2" "停止 QQ" "3" "添加账号" "4" "修改配置" \
             "5" "删除账号" "6" "查看状态" "7" "重装 NapCat" "8" "卸载 NapCat")
         case "$choice" in
@@ -244,8 +203,8 @@ _NapCat_管理() {
 
 if [[ "$1" == "--auto" ]]; then
     case "$2" in
-        start)        _NapCat_启动QQ "$3" "true" ;;
-        stop)         _NapCat_停止QQ "$3" ;;
+        start)        NapCat_启动QQ "$3" ;;
+        stop)         NapCat_停止QQ "$3" ;;
         is-installed) NapCat_是否就绪 && echo "yes" || echo "no" ;;
         uninstall)    _NapCat_卸载项目 ;;
         *) echo "用法: manage.sh --auto {start <qq>|stop <qq>|is-installed|uninstall}"; exit 1 ;;

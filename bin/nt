@@ -34,7 +34,7 @@ NapCat_确保依赖 || exit 1
 
 if [[ -n "${1:-}" ]]; then
     NapCat_添加或更新QQ "$1" "${2:-${NAPCAT_DEFAULT_PORT:-2537}}"
-    NapCat_启动QQ "$1" false
+    NapCat_启动QQ "$1"
 fi
 
 exec bash "$PROJECT_ROOT/tools/napcat/manage.sh"
