@@ -6,8 +6,7 @@ Tmux_引导 "${BASH_SOURCE[0]}" || exit 1
 
 SESSION_NAME="${HAMSTER_TMUX_SESSION:-🐹 Hamster Script}"
 TMUX_HOME="$(Tmux_用户主目录)" || exit 1
-TMUX_CONF="${TMUX_HOME}/.tmux/main.conf"
-export HAMSTER_TMUX_CONF="$TMUX_CONF"
+TMUX_CONF="${TMUX_HOME}/.tmux.conf"
 read -ra HAMSTER_TMUX_WINDOWS <<< "${HAMSTER_TMUX_WINDOW_NAMES:-甲 乙}"
 
 mkdir -p "$WORK_DIR"
