@@ -101,9 +101,30 @@ _拉取仓库() {
     return 1
 }
 
+_配置时区() {
+    local tz
+    tz=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "")
+    case "$tz" in
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Hong_Kong|Asia/Taipei) return 0 ;;
+    esac
+    _是否国内服务器 || return 0
+    echo "[setup] 系统时区为 ${tz:-未知}，设置为 Asia/Shanghai…"
+    if timedatectl set-timezone Asia/Shanghai 2>/dev/null; then
+        echo "[setup] ✓ 系统时区已设为 Asia/Shanghai"
+        return 0
+    fi
+    if [[ -f /usr/share/zoneinfo/Asia/Shanghai ]]; then
+        ln -sf /usr/share/zoneinfo/Asia/Shanghai /etc/localtime
+        echo Asia/Shanghai > /etc/timezone
+        echo "[setup] ✓ 系统时区已设为 Asia/Shanghai"
+    fi
+}
+
 _安装前引导() {
     local pkg_manager
     
+    _配置时区
+
     pkg_manager=$(包管理_获取管理器 2>/dev/null || echo unknown)
     [[ "$pkg_manager" != "apt" ]] && return 0
     

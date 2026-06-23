@@ -69,11 +69,23 @@ Tmux_链接配置() {
         return 1
     }
 
+    local hamster_tz="Asia/Shanghai"
+    local sys_tz
+    sys_tz=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || true)
+    case "$sys_tz" in
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Hong_Kong|Asia/Taipei)
+            hamster_tz="$sys_tz"
+            ;;
+    esac
+
     mkdir -p "${home}/.tmux"
-    sed "s|@HAMSTER_MENU@|${menu_cmd}|g" "$menus_tpl" > "$menus_out"
+    {
+        sed -e "s|@HAMSTER_MENU@|${menu_cmd}|g" -e "s|@HAMSTER_TZ@|${hamster_tz}|g" "$menus_tpl"
+        HAMSTER_MENU_CMD="$menu_cmd" bash "${install_dir}/config/tmux/tmux-menu.sh" --emit-mouse-binds
+    } > "$menus_out"
     {
         echo "# Hamster Script tmux（hamster-tmux --setup 生成）"
-        cat "$tmux_main"
+        sed -e "s|@HAMSTER_TZ@|${hamster_tz}|g" "$tmux_main"
         echo ""
         echo "source-file ${menus_out}"
     } > "$entry"
