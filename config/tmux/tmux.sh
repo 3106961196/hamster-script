@@ -11,7 +11,7 @@ read -ra HAMSTER_TMUX_WINDOWS <<< "${HAMSTER_TMUX_WINDOW_NAMES:-甲 乙}"
 
 mkdir -p "$WORK_DIR"
 
-_Tmux重载配置() {
+_Tmux启动服务() {
     [[ -f "$TMUX_CONF" ]] || return 1
     tmux info &>/dev/null || tmux -f "$TMUX_CONF" start-server 2>/dev/null || return 1
     tmux source-file "$TMUX_CONF" 2>/dev/null || return 1
@@ -25,32 +25,23 @@ _Tmux应用窗口名() {
     done
 }
 
-_Tmux会话可用() {
-    local s="$1" n
-    tmux has-session -t "$s" 2>/dev/null || return 1
-    n=$(tmux list-windows -t "$s" 2>/dev/null | wc -l)
-    [[ "${n:-0}" -ge 2 ]]
-}
-
-_Tmux创建布局() {
+_Tmux确保会话() {
     local s="$SESSION_NAME"
-    if _Tmux会话可用 "$s"; then
+    if tmux has-session -t "$s" 2>/dev/null; then
         _Tmux应用窗口名 "$s"
         return 0
     fi
-    tmux has-session -t "$s" 2>/dev/null && tmux kill-session -t "$s" 2>/dev/null || true
 
     tmux new-session -d -s "$s" -n "${HAMSTER_TMUX_WINDOWS[0]}" -c "$WORK_DIR" \
         "printf '\033[1;32m使用 cs 命令打开脚本主菜单\033[0m\n'; exec bash"
-    tmux split-window -v -t "$s:0" -c "$WORK_DIR" "exec bash"
-    tmux new-window -t "$s:1" -n "${HAMSTER_TMUX_WINDOWS[1]:-乙}" -c "$WORK_DIR" "exec bash"
-    tmux split-window -v -t "$s:1" -c "$WORK_DIR" "exec bash"
+    tmux split-window -v -t "$s:0" -c "$WORK_DIR"
+    tmux new-window -t "$s:1" -n "${HAMSTER_TMUX_WINDOWS[1]:-乙}" -c "$WORK_DIR"
+    tmux split-window -v -t "$s:1" -c "$WORK_DIR"
     tmux select-window -t "$s:0"
     _Tmux应用窗口名 "$s"
 }
 
 _Tmux进入() {
-    local cur
     Tmux_确保UTF8
     command -v tmux &>/dev/null || {
         echo "[hamster-tmux] 未安装，请运行 hamster-tmux --setup" >&2
@@ -60,17 +51,14 @@ _Tmux进入() {
         echo "[hamster-tmux] 配置未就绪，请运行 hamster-tmux --setup" >&2
         exit 1
     }
-    _Tmux重载配置 || true
-    _Tmux创建布局 || exit 1
-    _Tmux重载配置 || true
+    _Tmux启动服务 || true
+    _Tmux确保会话 || exit 1
 
     if [[ -n "$TMUX" ]]; then
-        cur=$(tmux display-message -p '#S' 2>/dev/null || true)
-        _Tmux应用窗口名 "$SESSION_NAME"
-        tmux display-message "配置已刷新" 2>/dev/null || true
-        [[ "$cur" == "$SESSION_NAME" ]] && exit 0
-        tmux switch-client -t "$SESSION_NAME"
-        exit 0
+        [[ "$(tmux display-message -p '#S' 2>/dev/null)" == "$SESSION_NAME" ]] \
+            && echo "[hamster-tmux] 已在 $SESSION_NAME" \
+            || tmux switch-client -t "$SESSION_NAME"
+        return 0
     fi
 
     echo "[hamster-tmux] 进入 $SESSION_NAME …"
@@ -92,8 +80,11 @@ EOF
         echo "tmux: $(command -v tmux >/dev/null && tmux -V || echo 未安装)"
         echo "配置: $TMUX_CONF $(Tmux_配置就绪 "$TMUX_HOME" && echo OK || echo 未就绪)"
         echo "工作目录: $WORK_DIR"
-        tmux has-session -t "$SESSION_NAME" 2>/dev/null \
-            && echo "会话: $SESSION_NAME 已存在" || echo "会话: 未创建"
+        if tmux has-session -t "$SESSION_NAME" 2>/dev/null; then
+            echo "会话: $SESSION_NAME 已存在（$(tmux list-windows -t "$SESSION_NAME" 2>/dev/null | wc -l) 个窗口）"
+        else
+            echo "会话: 未创建"
+        fi
         exit 0
         ;;
     --setup)
