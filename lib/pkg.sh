@@ -145,15 +145,29 @@ _INSTALL_MAX_RETRIES=3
 }
 
 包管理_升级() {
+    local package="${1:-}"
     local pkg_manager
     pkg_manager=$(包管理_获取管理器)
-    case "$pkg_manager" in
-        apt) DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confold" 2>&1 || return 1 ;;
-        yum) yum upgrade -y || return 1 ;;
-        pacman) pacman -Syu --noconfirm || return 1 ;;
-        apk) apk upgrade || return 1 ;; 
-        *) return 1 ;;
-    esac
+
+    if [[ -n "$package" ]]; then
+        # 单包升级
+        case "$pkg_manager" in
+            apt) DEBIAN_FRONTEND=noninteractive apt-get install -y --only-upgrade "$package" 2>&1 || return 1 ;;
+            yum) yum upgrade -y "$package" || return 1 ;;
+            pacman) pacman -S --noconfirm "$package" || return 1 ;;
+            apk) apk add --no-cache -u "$package" || return 1 ;;
+            *) return 1 ;;
+        esac
+    else
+        # 全局升级
+        case "$pkg_manager" in
+            apt) DEBIAN_FRONTEND=noninteractive apt upgrade -y -o Dpkg::Options::="--force-confold" 2>&1 || return 1 ;;
+            yum) yum upgrade -y || return 1 ;;
+            pacman) pacman -Syu --noconfirm || return 1 ;;
+            apk) apk upgrade || return 1 ;;
+            *) return 1 ;;
+        esac
+    fi
 }
 
 # MongoDB 官方源（https://www.mongodb.com/docs/manual/tutorial/install-mongodb-on-ubuntu/）
@@ -366,7 +380,25 @@ _包管理_安装重试() {
 包管理_卸载() {
     local package="$1"
     local pkg_manager
+    package=$(包管理_规范化包名 "$package")
     pkg_manager=$(包管理_获取管理器)
+
+    # 特殊包处理
+    case "$package" in
+        node)
+            # 清理 node 安装
+            rm -rf /opt/node /usr/local/bin/node /usr/local/bin/npm /usr/local/bin/pnpm 2>/dev/null
+            sed -i '/\/opt\/node\/bin/d' "${HOME}/.bashrc" 2>/dev/null
+            return 0
+            ;;
+        redis)
+            package="redis-server"
+            ;;
+        mongodb)
+            package="mongodb-org"
+            ;;
+    esac
+
     case "$pkg_manager" in
         apt) apt remove -y "$package" 2>&1 || return 1 ;;
         yum) yum remove -y "$package" || return 1 ;;
@@ -381,10 +413,22 @@ _包管理_安装重试() {
     local pkg_manager
     pkg_manager=$(包管理_获取管理器)
     case "$pkg_manager" in
-        apt) apt search "$package" 2>/dev/null | grep -E "^[^/]+/" | sed 's|/[^ ]*||' | head -30 ;;
-        yum) yum search "$package" 2>/dev/null | grep -E "^[^ ]+\." | awk '{print $1}' | head -30 ;;
-        pacman) pacman -Ss "$package" 2>/dev/null | grep -E "^[^/]+/" | sed 's|/.*||' | head -30 ;;
-        apk) apk search "$package" 2>/dev/null | head -30 ;;
+        apt)
+            # apt search 输出格式: 包名/版本 架构 状态 \n 描述
+            # 需要合并多行输出
+            apt search "$package" 2>/dev/null | awk '
+                /^[^ ]+\/[^ ]+/ {
+                    name=$1; sub(/\/.*/, "", name);
+                    getline desc;
+                    gsub(/^[ \t]+/, "", desc);
+                    if (desc != "") print name " " desc;
+                    else print name;
+                }
+            ' | head -20
+            ;;
+        yum) yum search "$package" 2>/dev/null | grep -E "^[^ ]+\." | awk '{print $1, $2}' | head -20 ;;
+        pacman) pacman -Ss "$package" 2>/dev/null | awk '/^[^ ]+\// {name=$1; sub(/\/.*/, "", name); getline desc; print name, desc}' | head -20 ;;
+        apk) apk search "$package" 2>/dev/null | head -20 ;;
         *) return 1 ;;
     esac
 }
@@ -393,10 +437,51 @@ _包管理_安装重试() {
     local pkg_manager
     pkg_manager=$(包管理_获取管理器)
     case "$pkg_manager" in
-        apt) dpkg -l | awk '/^ii/ {print $2, $3}' ;;
-        yum) rpm -qa --queryformat '%{NAME} %{VERSION}-%{RELEASE}\n' ;;
-        pacman) pacman -Q ;;
-        apk) apk info -v | sed 's/-\([0-9].*\)/ \1/' ;;
+        apt)
+            # 只显示用户手动安装的包，过滤掉系统依赖和库文件
+            if command -v apt-mark &>/dev/null; then
+                apt-mark showmanual 2>/dev/null
+            else
+                # fallback: 从 /var/log/apt/history.log 提取手动安装的包
+                grep -oP 'Installed: \K[^)]+' /var/log/apt/history.log 2>/dev/null | \
+                    tr ',' '\n' | sed 's/^ *//;s/ *$//' | sort -u
+            fi | while read -r pkg; do
+                # 跳过 lib 开头的库文件
+                [[ "$pkg" == lib* ]] && continue
+                # 跳过 :i386 等多架构后缀
+                pkg="${pkg%%:*}"
+                local ver
+                ver=$(dpkg -s "$pkg" 2>/dev/null | awk '/^Version:/ {print $2; exit}')
+                [[ -n "$ver" ]] && echo "$pkg ${ver%%-*}"
+            done
+            ;;
+        yum)
+            # 只显示用户安装的包，排除依赖
+            yum history list --installed 2>/dev/null | awk 'NR>3 {print $3}' | while read -r pkg; do
+                [[ "$pkg" == lib* ]] && continue
+                local ver
+                ver=$(rpm -q --queryformat '%{VERSION}-%{RELEASE}\n' "$pkg" 2>/dev/null | head -1)
+                [[ -n "$ver" && "$ver" != *"not installed"* ]] && echo "$pkg $ver"
+            done
+            ;;
+        pacman)
+            # 只显示显式安装的包
+            pacman -Qe | while read -r pkg _; do
+                [[ "$pkg" == lib* ]] && continue
+                local ver
+                ver=$(pacman -Q "$pkg" 2>/dev/null | awk '{print $2}')
+                [[ -n "$ver" ]] && echo "$pkg $ver"
+            done
+            ;;
+        apk)
+            # 只显示用户安装的包
+            apk info -v 2>/dev/null | while read -r line; do
+                local pkg="${line%%-[0-9]*}"
+                [[ "$pkg" == lib* ]] && continue
+                local ver="${line#*-}"
+                [[ -n "$ver" ]] && echo "$pkg $ver"
+            done
+            ;;
         *) return 1 ;;
     esac
 }
