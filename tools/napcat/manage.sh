@@ -117,41 +117,51 @@ _NapCat_勾选框架() {
 }
 
 _NapCat_由勾选生成Links() {
-    local qq="$1" raw="$2" old='[]' links='[]' id fw port token
+    local qq="$1" raw="$2" old='[]' links='[]' id fw port token root
     [[ -f "$(NapCat_QQ配置文件 "$qq")" ]] && old="$(jq -c '.links // []' "$(NapCat_QQ配置文件 "$qq")")"
+    old="$(napcat_json_or "$old" '[]')"
     while IFS= read -r id; do
         id="${id//$'\r'/}"
         id="${id#"${id%%[![:space:]]*}"}"
         id="${id%"${id##*[![:space:]]}"}"
         [[ -z "$id" ]] && continue
-        fw="$(napcat_get_framework "$id")" || continue
+        fw="$(napcat_get_framework "$id" 2>/dev/null)" || continue
+        [[ -n "$fw" ]] || continue
+        root="$(echo "$fw" | jq -r '.root // empty')"
+        [[ -n "$root" ]] || continue
         port="$(echo "$old" | jq -r --arg id "$id" '.[]|select(.framework_id==$id)|.port//empty' | head -n1)"
-        [[ -z "$port" ]] && port="$(echo "$fw" | jq -r '.default_port')"
+        [[ -z "$port" ]] && port="$(echo "$fw" | jq -r '.default_port // empty')"
+        port="$(napcat_coerce_port "$port" "$(napcat_guess_framework_port "$root")")"
         token="$(echo "$old" | jq -r --arg id "$id" '.[]|select(.framework_id==$id)|.token//""' | head -n1)"
-        links="$(jq -n --argjson a "$links" --arg id "$id" --argjson port "$port" --arg token "$token" \
-            '$a + [{framework_id:$id,enabled:true,port:$port,token:$token}]')"
+        links="$(jq -n --argjson a "$(napcat_json_or "$links" '[]')" --arg id "$id" --argjson port "$port" --arg token "${token:-}" \
+            '$a + [{framework_id:$id,enabled:true,port:$port,token:$token}]')" || continue
     done <<< "$raw"
-    printf '%s' "$links"
+    printf '%s' "$(napcat_json_or "$links" '[]')"
 }
 
 _NapCat_微调端口() {
-    local links="$1" out='[]' link id fw label port new_port
+    local links="$1" out='[]' link id fw label port new_port root
+    links="$(napcat_json_or "$links" '[]')"
     while IFS= read -r link; do
         [[ -z "$link" ]] && continue
-        id="$(echo "$link" | jq -r '.framework_id')"
-        fw="$(napcat_get_framework "$id")"
+        id="$(echo "$link" | jq -r '.framework_id // empty')"
+        [[ -n "$id" ]] || continue
+        fw="$(napcat_get_framework "$id" 2>/dev/null)" || continue
+        [[ -n "$fw" ]] || continue
+        root="$(echo "$fw" | jq -r '.root // empty')"
         label="$(echo "$fw" | jq -r '.label // .id')"
-        port="$(echo "$link" | jq -r '.port')"
+        port="$(napcat_coerce_port "$(echo "$link" | jq -r '.port // empty')" "$(napcat_guess_framework_port "$root")")"
         new_port=$(界面输入 "$label 监听端口" "$port")
         [[ -z "$new_port" ]] && new_port="$port"
         if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1 || "$new_port" -gt 65535 ]]; then
             界面警告 "端口无效，保留 $port"
             new_port="$port"
         fi
-        link="$(echo "$link" | jq --argjson port "$new_port" '.port=$port')"
-        out="$(jq -n --argjson a "$out" --argjson l "$link" '$a + [$l]')"
-    done < <(echo "$links" | jq -c '.[]')
-    printf '%s' "$out"
+        new_port="$(napcat_coerce_port "$new_port" "$port")"
+        link="$(echo "$link" | jq --argjson port "$new_port" '.port=$port')" || continue
+        out="$(jq -n --argjson a "$(napcat_json_or "$out" '[]')" --argjson l "$(napcat_json_or "$link" '{}')" '$a + [$l]')" || continue
+    done < <(echo "$links" | jq -c '.[]?')
+    printf '%s' "$(napcat_json_or "$out" '[]')"
 }
 
 _NapCat_QQ向导() {
@@ -246,12 +256,33 @@ _NapCat_交互停止QQ() {
     界面完成 "QQ $_PICKED_QQ 已停止"
 }
 
+_NapCat_添加框架交互() {
+    local path port label id prefs fw
+    path=$(界面输入 "框架根目录" "${HOME:-/root}")
+    [[ -z "$path" || ! -d "$path" ]] && { 界面警告 "目录无效"; return 1; }
+    port=$(界面输入 "默认端口" "$(napcat_guess_framework_port "$path")")
+    [[ -z "$port" ]] && port="$(napcat_guess_framework_port "$path")"
+    port="$(napcat_coerce_port "$port" "$(napcat_guess_framework_port "$path")")"
+    [[ "$port" =~ ^[0-9]+$ ]] || { 界面警告 "端口无效"; return 1; }
+    label="$(napcat_framework_label "$path")"
+    id="$(napcat_framework_id_from_root "$path")"
+    fw="$(jq -n --arg id "$id" --arg label "$label" --arg root "$path" --argjson port "$port" \
+        '{id:$id,label:$label,root:$root,default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"}')" || {
+        界面警告 "生成框架 JSON 失败"; return 1
+    }
+    prefs="$(napcat_json_or "$(napcat_load_prefs)" '{}')"
+    napcat_save_prefs "$(echo "$prefs" | jq --argjson fw "$fw" \
+        '.frameworks = ([.frameworks[]|select(.root!=$fw.root)] + [$fw])')" \
+        || { 界面警告 "${NAPCAT_LAST_ERR:-保存失败}"; return 1; }
+    界面完成 "已添加 $label"
+}
+
 _NapCat_框架管理() {
     napcat_refresh_frameworks >/dev/null 2>&1 || true
-    local items=() id label port sel path prefs fw new_port fw_count
+    local items=() id label port sel prefs fw new_port fw_count cur_port
 
     while true; do
-        fw_count="$(napcat_load_prefs | jq '.frameworks|length')"
+        fw_count="$(napcat_json_or "$(napcat_load_prefs)" '{"frameworks":[]}' | jq '.frameworks|length')"
         if [[ "${fw_count:-0}" -eq 0 ]]; then
             sel=$(界面子菜单 "框架管理" "未扫描到框架，请先扫描或手动添加:" \
                 "scan" "扫描磁盘" "add" "手动添加目录")
@@ -261,22 +292,7 @@ _NapCat_框架管理() {
                     napcat_refresh_frameworks >/dev/null
                     界面完成 "扫描完成"
                     ;;
-                add)
-                    path=$(界面输入 "框架根目录" "${HOME:-/root}")
-                    [[ -z "$path" || ! -d "$path" ]] && { 界面警告 "目录无效"; continue; }
-                    port=$(界面输入 "默认端口" "$(napcat_guess_framework_port "$path")")
-                    [[ -z "$port" ]] && port="$(napcat_guess_framework_port "$path")"
-                    [[ "$port" =~ ^[0-9]+$ ]] || { 界面警告 "端口无效"; continue; }
-                    label="$(napcat_framework_label "$path")"
-                    id="$(napcat_framework_id_from_root "$path")"
-                    fw="$(jq -n --arg id "$id" --arg label "$label" --arg root "$path" --argjson port "$port" \
-                        '{id:$id,label:$label,root:$root,default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"}')"
-                    prefs="$(napcat_load_prefs)"
-                    napcat_save_prefs "$(echo "$prefs" | jq --argjson fw "$fw" \
-                        '.frameworks = ([.frameworks[]|select(.root!=$fw.root)] + [$fw])')" \
-                        || { 界面警告 "${NAPCAT_LAST_ERR:-保存失败}"; continue; }
-                    界面完成 "已添加 $label"
-                    ;;
+                add) _NapCat_添加框架交互 || true ;;
             esac
             continue
         fi
@@ -294,33 +310,22 @@ _NapCat_框架管理() {
                 napcat_refresh_frameworks >/dev/null
                 界面完成 "扫描完成"
                 ;;
-            add)
-                path=$(界面输入 "框架根目录" "${HOME:-/root}")
-                [[ -z "$path" || ! -d "$path" ]] && { 界面警告 "目录无效"; continue; }
-                port=$(界面输入 "默认端口" "$(napcat_guess_framework_port "$path")")
-                [[ -z "$port" ]] && port="$(napcat_guess_framework_port "$path")"
-                [[ "$port" =~ ^[0-9]+$ ]] || { 界面警告 "端口无效"; continue; }
-                label="$(napcat_framework_label "$path")"
-                id="$(napcat_framework_id_from_root "$path")"
-                fw="$(jq -n --arg id "$id" --arg label "$label" --arg root "$path" --argjson port "$port" \
-                    '{id:$id,label:$label,root:$root,default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"}')"
-                prefs="$(napcat_load_prefs)"
-                napcat_save_prefs "$(echo "$prefs" | jq --argjson fw "$fw" \
-                    '.frameworks = ([.frameworks[]|select(.root!=$fw.root)] + [$fw])')" \
-                    || { 界面警告 "${NAPCAT_LAST_ERR:-保存失败}"; continue; }
-                界面完成 "已添加 $label"
-                ;;
+            add) _NapCat_添加框架交互 || true ;;
             port)
                 items=()
                 while IFS='|' read -r id label _; do items+=("$id" "$label"); done < <(_NapCat_框架菜单项)
                 [[ ${#items[@]} -eq 0 ]] && { 界面警告 "无框架"; continue; }
                 id=$(界面选择 "改端口" "选择框架:" "${items[@]}")
                 界面有选择 "$id" || continue
-                new_port=$(界面输入 "新默认端口" "$(napcat_get_framework "$id" | jq -r '.default_port')")
+                fw="$(napcat_get_framework "$id" 2>/dev/null)" || { 界面警告 "框架无效，请重新扫描"; continue; }
+                cur_port="$(echo "$fw" | jq -r '.default_port // empty')"
+                new_port=$(界面输入 "新默认端口" "$(napcat_coerce_port "$cur_port" 2537)")
+                new_port="$(napcat_coerce_port "$new_port" "")"
                 [[ "$new_port" =~ ^[0-9]+$ ]] || { 界面警告 "端口无效"; continue; }
-                prefs="$(napcat_load_prefs)"
+                prefs="$(napcat_json_or "$(napcat_load_prefs)" '{}')"
                 napcat_save_prefs "$(echo "$prefs" | jq --arg id "$id" --argjson port "$new_port" \
-                    '.frameworks = [.frameworks[]|if .id==$id then .default_port=$port else . end]')"
+                    '.frameworks = [.frameworks[]|if .id==$id then .default_port=$port else . end]')" \
+                    || { 界面警告 "${NAPCAT_LAST_ERR:-保存失败}"; continue; }
                 if 界面确认 "同步已有 QQ 绑定中该框架的端口？"; then
                     napcat_sync_qq_link_ports "$id" "$new_port"
                     界面完成 "已更新并同步 QQ 绑定"
@@ -335,7 +340,7 @@ _NapCat_框架管理() {
                 id=$(界面选择 "移除框架" "选择:" "${items[@]}")
                 界面有选择 "$id" || continue
                 界面确认 "确认移除 $id？" || continue
-                prefs="$(napcat_load_prefs)"
+                prefs="$(napcat_json_or "$(napcat_load_prefs)" '{}')"
                 napcat_save_prefs "$(echo "$prefs" | jq --arg id "$id" '.frameworks = [.frameworks[]|select(.id!=$id)]')"
                 界面完成 "已移除"
                 ;;
@@ -359,6 +364,7 @@ _NapCat_WebUI菜单() {
     fi
 
     prefs="$(napcat_load_prefs)" || true
+    prefs="$(napcat_json_or "$prefs" "")"
     if [[ -n "${NAPCAT_LAST_ERR:-}" ]]; then
         界面警告 "加载配置时出现问题（已用默认值继续）\n${NAPCAT_LAST_ERR}"
         NAPCAT_LAST_ERR=""
@@ -390,14 +396,11 @@ _NapCat_WebUI菜单() {
         界面警告 "WebUI 表单解析失败\n${NAPCAT_LAST_ERR:-}"
         return 1
     }
+    h="$(_NapCat_字段修剪 "$h")"
     [[ -n "$h" ]] || { 界面警告 "监听地址为空"; return 1; }
     [[ -z "$t" ]] && t="$(echo "$eff" | jq -r '.token // ""')"
-    p="$(_NapCat_字段修剪 "$p")"
-    r="$(_NapCat_字段修剪 "$r")"
-    [[ -z "$p" ]] && p="$(echo "$eff" | jq -r '.port')"
-    [[ -z "$r" ]] && r=3
-    [[ "$p" =~ ^[0-9]+$ ]] || { 界面警告 "端口须为数字：$p"; return 1; }
-    [[ "$r" =~ ^[0-9]+$ ]] || { 界面警告 "限速须为数字：$r"; return 1; }
+    p="$(napcat_coerce_port "$(_NapCat_字段修剪 "$p")" "$(echo "$eff" | jq -r '.port // 4071')")"
+    r="$(napcat_coerce_port "$(_NapCat_字段修剪 "$r")" "3")"
 
     case "$(printf '%s' "$dp" | tr '[:upper:]' '[:lower:]' | tr -d '[:space:]')" in
         y|yes|1|true|是) dp_json=true ;;

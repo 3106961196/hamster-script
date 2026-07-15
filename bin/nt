@@ -38,14 +38,13 @@ _nt_help() {
 用法:
   nt                     管理菜单（多 QQ · 多框架 · WebUI）
   nt <QQ>                启动已配置账号（前台 xvfb-run）
-  nt <QQ> <端口>         快捷绑定端口（自动匹配/创建框架）并启动
   nt --sync-onebot <QQ>  仅同步 onebot11（需先停 QQ）
   nt --webui-apply       将 prefs 合并写入 webui.json（需先停 QQ）
 
 说明:
-  · QQ 绑定存脚本侧 data/napcat/qq_<QQ>.json（重装 NapCat 不丢）
-  · 可多选框架；启动前自动生成 onebot11_* 并校验
-  · 改 WebUI / 同步 onebot 时请先停止 QQ，否则 NapCat 会写回内存配置
+  · 先在 nt 中扫描框架并新增 QQ 绑定
+  · QQ 配置: data/napcat/qq_<QQ>.json（重装 NapCat 不丢）
+  · 改 WebUI / 同步 onebot 时请先停止 QQ
 EOF
 }
 
@@ -83,14 +82,12 @@ case "${1:-}" in
 esac
 
 if [[ -n "${1:-}" ]]; then
-    if [[ -n "${2:-}" ]]; then
-        NapCat_添加或更新QQ "$1" "$2" || exit 1
-    fi
     if [[ ! -f "$(NapCat_QQ配置文件 "$1")" ]]; then
-        echo "无 qq_$1.json，请先运行 nt 配置，或: nt $1 <端口>"
+        echo "无 qq_$1.json，请先运行 nt 配置"
         exit 1
     fi
     NapCat_启动QQ "$1"
+    exit $?
 fi
 
 exec bash "$PROJECT_ROOT/tools/napcat/manage.sh"
