@@ -5,6 +5,23 @@
 NAPCAT_CONFIG_DIR="${NAPCAT_CONFIG_DIR:-/opt/QQ/resources/app/app_launcher/napcat/config}"
 NAPCAT_LAST_ERR=""
 
+# --argjson 只接受合法 JSON；空串/null 会直接报错
+napcat_coerce_port() {
+    local v="$1" fallback="${2:-2537}"
+    v="$(printf '%s' "$v" | tr -d '\r\n[:space:]')"
+    [[ "$v" =~ ^[0-9]+$ ]] && { printf '%s' "$v"; return 0; }
+    printf '%s' "$fallback"
+}
+
+napcat_json_or() {
+    local raw="$1" fallback="${2:-[]}"
+    if [ -n "$raw" ] && printf '%s' "$raw" | jq -e . >/dev/null 2>&1; then
+        printf '%s' "$raw"
+    else
+        printf '%s' "$fallback"
+    fi
+}
+
 # QQ 绑定 / prefs 存脚本侧 data（重装 NapCat 不丢）；默认 PROJECT_ROOT/data/napcat
 napcat_qq_dir() {
     if [ -n "${NAPCAT_QQ_DIR:-}" ]; then
@@ -153,14 +170,14 @@ napcat_refresh_frameworks() {
 napcat_get_framework() {
     local id="$1" prefs fw root derived
     prefs="$(napcat_load_prefs)"
+    prefs="$(napcat_json_or "$prefs" '{}')"
     fw="$(echo "$prefs" | jq -c --arg id "$id" '.frameworks[]? | select(.id == $id)' | head -n1)"
     [ -n "$fw" ] || return 1
     root="$(echo "$fw" | jq -r '.root // ""')"
-    # 允许无 root 的手动/占位框架（仅按 id 匹配）
-    if [ -z "$root" ]; then
-        printf '%s' "$fw"
-        return 0
-    fi
+    [ -n "$root" ] || {
+        NAPCAT_LAST_ERR="框架 ${id} 缺少安装目录，请 nt → 框架管理 → 重新扫描或手动添加"
+        return 1
+    }
     derived="$(napcat_framework_id_from_root "$root")"
     [ "$derived" = "$id" ] || {
         NAPCAT_LAST_ERR="napcat_prefs 框架 id=${id} 与目录 ${root} 不一致（应为 ${derived}）\n请 nt → 框架管理 → 重新扫描，再修改 QQ 绑定"
@@ -237,20 +254,13 @@ napcat_resolve_link_endpoint() {
     [ -z "$fw" ] && fw="$(napcat_get_framework "$id")" || true
     [ -n "$fw" ] || return 1
     root="$(echo "$fw" | jq -r '.root // ""')"
-    label="$(echo "$fw" | jq -r '.label // empty')"
-    [ -z "$label" ] && label="$(napcat_framework_label "$root")"
-    [ -z "$label" ] && label="$id"
+    [ -n "$root" ] || return 1
+    label="$(napcat_framework_label "$root")"
     ws_host="$(echo "$link" | jq -r '.ws_host // empty')"
     [ -z "$ws_host" ] && ws_host="$(echo "$fw" | jq -r '.ws_host // "127.0.0.1"')"
     port="$(echo "$link" | jq -r '.port // empty')"
     [ -z "$port" ] && port="$(echo "$fw" | jq -r '.default_port // empty')"
-    [[ "$port" =~ ^[0-9]+$ ]] || {
-        if [ -n "$root" ]; then
-            port="$(napcat_guess_framework_port "$root")"
-        else
-            port=2537
-        fi
-    }
+    port="$(napcat_coerce_port "$port" "$(napcat_guess_framework_port "$root")")"
     ws_path="$(echo "$link" | jq -r '.ws_path // empty')"
     [ -z "$ws_path" ] && ws_path="$(echo "$fw" | jq -r '.ws_path // "OneBotv11"')"
     ws_path="${ws_path#/}"
@@ -333,6 +343,7 @@ napcat_qq_onebot_mismatch() {
 napcat_sync_qq_link_ports() {
     local fw_id="$1" new_port="$2" qq_dir qf tmp
     qq_dir="$(napcat_qq_dir)"
+    new_port="$(napcat_coerce_port "$new_port" "")"
     [[ "$new_port" =~ ^[0-9]+$ ]] || return 1
     for qf in "${qq_dir}"/qq_*.json; do
         [ -f "$qf" ] || continue
@@ -350,11 +361,12 @@ napcat_qq_links_summary() {
     while IFS= read -r link; do
         [ -z "$link" ] && continue
         napcat_link_enabled "$link" || continue
-        id="$(echo "$link" | jq -r '.framework_id')"
-        fw="$(napcat_get_framework "$id")"
-        [ -z "$fw" ] && continue
-        label="$(echo "$fw" | jq -r '.label')"
-        port="$(echo "$link" | jq -r '.port')"
+        id="$(echo "$link" | jq -r '.framework_id // empty')"
+        [ -n "$id" ] || continue
+        fw="$(napcat_get_framework "$id" 2>/dev/null)" || continue
+        [ -n "$fw" ] || continue
+        label="$(echo "$fw" | jq -r '.label // .id')"
+        port="$(napcat_coerce_port "$(echo "$link" | jq -r '.port // empty')" "$(echo "$fw" | jq -r '.default_port // 2537')")"
         parts="${parts:+$parts, }${label}:${port}"
     done < <(jq -c '.links[]?' "$qq_file")
     [ -n "$parts" ] && printf '%s' "$parts" || printf '未绑定框架'
@@ -373,9 +385,9 @@ napcat_read_webui() {
 # 表单/状态展示：以 webui.json 为准（NapCat 运行后会写回完整 schema）
 napcat_webui_effective() {
     local w prefs
-    w="$(napcat_read_webui)"
+    w="$(napcat_json_or "$(napcat_read_webui)" '{}')"
     prefs="$(napcat_load_prefs 2>/dev/null || true)"
-    [ -z "$prefs" ] && prefs='{}'
+    prefs="$(napcat_json_or "$prefs" '{}')"
     jq -n \
         --argjson w "$w" \
         --argjson p "$prefs" \
@@ -399,19 +411,18 @@ napcat_webui_url() {
 napcat_apply_webui() {
     local prefs host port rate token disable_pty wf tmp err base has_token
     prefs="$(napcat_load_prefs)" || true
+    prefs="$(napcat_json_or "$prefs" "")"
     [ -z "$prefs" ] && { NAPCAT_LAST_ERR="无法加载 napcat_prefs"; return 1; }
 
     host="$(echo "$prefs" | jq -r '.webui_host // "0.0.0.0"')"
-    port="$(echo "$prefs" | jq -r '.webui_port // 4071')"
-    rate="$(echo "$prefs" | jq -r '.login_rate // 3')"
+    port="$(napcat_coerce_port "$(echo "$prefs" | jq -r '.webui_port // 4071')" "4071")"
+    rate="$(napcat_coerce_port "$(echo "$prefs" | jq -r '.login_rate // 3')" "3")"
     disable_pty="$(echo "$prefs" | jq -r '.disable_pty // true')"
     token="$(echo "$prefs" | jq -r '.webui_token // ""' | tr -d '\r\n')"
     has_token=false
     [ -n "$token" ] && has_token=true
     [ "$has_token" = false ] && token="$(napcat_read_webui 2>/dev/null | jq -r '.token // ""' | tr -d '\r\n')"
 
-    [[ "$port" =~ ^[0-9]+$ ]] || { NAPCAT_LAST_ERR="无效端口: $port"; return 1; }
-    [[ "$rate" =~ ^[0-9]+$ ]] || { NAPCAT_LAST_ERR="无效限速: $rate"; return 1; }
     [ -n "$host" ] || { NAPCAT_LAST_ERR="监听地址不能为空"; return 1; }
 
     wf="$(napcat_webui_file)"
@@ -479,8 +490,12 @@ napcat_write_onebot_config() {
             [ -n "${NAPCAT_LAST_ERR:-}" ] || NAPCAT_LAST_ERR="未注册框架: ${id}（nt → 框架管理 → 扫描）"
             return 1
         }
-        label="$(echo "$fw" | jq -r '.label')"
-        root="$(echo "$fw" | jq -r '.root')"
+        label="$(echo "$fw" | jq -r '.label // .id')"
+        root="$(echo "$fw" | jq -r '.root // ""')"
+        [ -n "$root" ] || {
+            NAPCAT_LAST_ERR="框架 ${id} 缺少安装目录"
+            return 1
+        }
         row="$(napcat_resolve_link_endpoint "$link" "$fw")" || {
             NAPCAT_LAST_ERR="无法解析框架 ${id} 的连接"
             return 1
@@ -490,14 +505,17 @@ napcat_write_onebot_config() {
         napcat_harden_api_key "$root" "$label" 2>/dev/null || true
         token="$(napcat_resolve_link_token "$link" "$global_token" 2>/dev/null || true)"
         name="$(echo "$label" | tr ' ' '-' | tr '[:upper:]' '[:lower:]')"
-        clients="$(jq -n --argjson arr "$clients" --arg name "$name" --arg url "$url" --arg token "$token" \
+        clients="$(jq -n --argjson arr "$(napcat_json_or "$clients" '[]')" --arg name "$name" --arg url "$url" --arg token "${token:-}" \
             '$arr + [{
                 name: ("ws-" + $name), enable: true, url: $url,
                 messagePostFormat: "array", reportSelfMessage: false,
                 reconnectInterval: 5000, token: $token, debug: false, heartInterval: 30000
-            }]')"
+            }]')" || {
+            NAPCAT_LAST_ERR="生成 websocketClients 失败（框架 ${id}）"
+            return 1
+        }
         n=$((n + 1))
-    done < <(echo "$links_json" | jq -c '.[]')
+    done < <(echo "$(napcat_json_or "$links_json" '[]')" | jq -c '.[]?')
 
     [ "$n" -gt 0 ] || {
         NAPCAT_LAST_ERR="无有效 QQ 框架绑定（检查 framework_id / enabled）"
@@ -527,10 +545,13 @@ napcat_write_onebot_config() {
 }
 
 napcat_write_napcat_config() {
-    local qq_num="$1" cfg="$2"
-    jq -n \
-        --argjson fl "$(echo "$cfg" | jq '.file_log // false')" \
-        --argjson cl "$(echo "$cfg" | jq '.console_log // true')" \
+    local qq_num="$1" cfg="$2" fl cl
+    cfg="$(napcat_json_or "$cfg" '{}')"
+    fl="$(echo "$cfg" | jq '.file_log // false')"
+    cl="$(echo "$cfg" | jq '.console_log // true')"
+    fl="$(napcat_json_or "$fl" 'false')"
+    cl="$(napcat_json_or "$cl" 'true')"
+    jq -n --argjson fl "$fl" --argjson cl "$cl" \
         '{fileLog:$fl,consoleLog:$cl,fileLogLevel:"debug",consoleLogLevel:"info",
           packetBackend:"auto",packetServer:""}' \
         > "${NAPCAT_CONFIG_DIR}/napcat_${qq_num}.json"

@@ -88,118 +88,9 @@ NapCat_获取运行中QQ() {
     done < <(pgrep -f "$(NapCat_QQ匹配)" 2>/dev/null) | sort -u
 }
 
-# 将旧版 Napcatbot（qq+port 数组）迁移为 qq_*.json + 框架绑定
-NapCat_迁移旧Bot() {
-    _NapCat_加载配置
-    local qq_dir bot_file qq port fw_id fw links qf
-    qq_dir="$(napcat_qq_dir)"
-    bot_file="${NAPCATBOT_FILE:-}"
-    [[ -f "$bot_file" ]] || return 0
-    shopt -s nullglob
-    local existing=("${qq_dir}"/qq_*.json)
-    shopt -u nullglob
-    [[ ${#existing[@]} -gt 0 ]] && return 0
-
-    napcat_refresh_frameworks >/dev/null 2>&1 || true
-    while IFS=$'\t' read -r qq port; do
-        [[ -z "$qq" || -z "$port" ]] && continue
-        [[ -f "$(NapCat_QQ配置文件 "$qq")" ]] && continue
-        fw_id=""
-        fw="$(napcat_load_prefs | jq -c --argjson port "$port" \
-            '.frameworks[]? | select(.default_port == $port)' | head -n1)"
-        if [[ -z "$fw" ]]; then
-            fw="$(napcat_load_prefs | jq -c '.frameworks[0]?' )"
-        fi
-        if [[ -n "$fw" && "$fw" != "null" ]]; then
-            fw_id="$(echo "$fw" | jq -r '.id')"
-            [[ -z "$port" || "$port" == "null" ]] && port="$(echo "$fw" | jq -r '.default_port')"
-        else
-            # 无框架时写入 manual 占位，仍可按端口连反向 WS
-            fw_id="manual"
-            local prefs
-            prefs="$(napcat_load_prefs)"
-            napcat_save_prefs "$(echo "$prefs" | jq --argjson port "${port:-2537}" '
-                (.frameworks // []) as $f |
-                if any($f[]; .id == "manual") then
-                    .frameworks = [$f[] | if .id == "manual" then .default_port = $port else . end]
-                else
-                    .frameworks = $f + [{
-                        id:"manual",label:"自定义",root:"",
-                        default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"
-                    }]
-                end
-            ')" 2>/dev/null || true
-        fi
-        links="$(jq -n --arg id "$fw_id" --argjson port "${port:-2537}" \
-            '[{framework_id:$id,enabled:true,port:$port,token:""}]')"
-        qf="$(NapCat_QQ配置文件 "$qq")"
-        jq -n --arg qq "$qq" --argjson links "$links" \
-            '{qq:$qq,ob_token:"",links:$links,console_log:true,file_log:false}' > "$qf"
-    done < <(jq -r '.[]? | "\(.qq)\t\(.port)"' "$bot_file" 2>/dev/null)
-}
-
 NapCat_确保Bot() {
     _NapCat_加载配置
     mkdir -p "$(napcat_qq_dir)"
-    NapCat_迁移旧Bot
-}
-
-# 快捷写入：单框架端口（nt <QQ> [port] / 旧 UI）；有已存 links 时只改匹配端口
-NapCat_添加或更新QQ() {
-    local qq_num="$1"
-    local port="${2:-}"
-    local qf links fw fw_id prefs
-    _NapCat_加载配置
-    NapCat_确保Bot
-    napcat_refresh_frameworks >/dev/null 2>&1 || true
-    qf="$(NapCat_QQ配置文件 "$qq_num")"
-
-    if [[ -z "$port" ]]; then
-        port="$NAPCAT_DEFAULT_PORT"
-    fi
-    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
-        echo "无效端口: $port" >&2
-        return 1
-    fi
-
-    fw="$(napcat_load_prefs | jq -c --argjson port "$port" \
-        '.frameworks[]? | select(.default_port == $port)' | head -n1)"
-    [[ -z "$fw" || "$fw" == "null" ]] && fw="$(napcat_load_prefs | jq -c '.frameworks[0]?')"
-    if [[ -z "$fw" || "$fw" == "null" ]]; then
-        prefs="$(napcat_load_prefs)"
-        napcat_save_prefs "$(echo "$prefs" | jq --argjson port "$port" '
-            (.frameworks // []) as $f |
-            if any($f[]; .id == "manual") then
-                .frameworks = [$f[] | if .id == "manual" then .default_port = $port else . end]
-            else
-                .frameworks = $f + [{
-                    id:"manual",label:"自定义",root:"",
-                    default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"
-                }]
-            end
-        ')" || return 1
-        fw_id="manual"
-    else
-        fw_id="$(echo "$fw" | jq -r '.id')"
-    fi
-
-    if [[ -f "$qf" ]]; then
-        links="$(jq -c --arg id "$fw_id" --argjson port "$port" '
-            .links = (
-                if any(.links[]?; .framework_id == $id) then
-                    [.links[] | if .framework_id == $id then .port = $port | .enabled = true else . end]
-                else
-                    (.links // []) + [{framework_id:$id,enabled:true,port:$port,token:""}]
-                end
-            ) | .links
-        ' "$qf")"
-        jq --argjson links "$links" '.links = $links' "$qf" > "${qf}.tmp" && mv "${qf}.tmp" "$qf"
-    else
-        links="$(jq -n --arg id "$fw_id" --argjson port "$port" \
-            '[{framework_id:$id,enabled:true,port:$port,token:""}]')"
-        jq -n --arg qq "$qq_num" --argjson links "$links" \
-            '{qq:$qq,ob_token:"",links:$links,console_log:true,file_log:false}' > "$qf"
-    fi
 }
 
 NapCat_保存QQ配置() {
@@ -207,9 +98,13 @@ NapCat_保存QQ配置() {
     local qf
     _NapCat_加载配置
     mkdir -p "$(napcat_qq_dir)"
+    links="$(napcat_json_or "$links" '[]')"
     qf="$(NapCat_QQ配置文件 "$qq")"
     jq -n --arg qq "$qq" --arg ob "$ob_token" --argjson links "$links" \
-        '{qq:$qq,ob_token:$ob,links:$links,console_log:true,file_log:false}' > "$qf"
+        '{qq:$qq,ob_token:$ob,links:$links,console_log:true,file_log:false}' > "$qf" || {
+        NAPCAT_LAST_ERR="写入 QQ 配置失败: $qf"
+        return 1
+    }
     if [[ -n "$old_qq" && "$old_qq" != "$qq" ]]; then
         rm -f "$(NapCat_QQ配置文件 "$old_qq")"
         rm -f "${CONFIG_DIR}/napcat_${old_qq}.json" "${CONFIG_DIR}/onebot11_${old_qq}.json"
@@ -226,16 +121,6 @@ NapCat_获取QQ列表() {
         basename "$qf" | sed 's/^qq_//;s/\.json$//'
     done
     shopt -u nullglob
-}
-
-NapCat_获取QQ端口() {
-    local qq_num="$1" qf port
-    _NapCat_加载配置
-    qf="$(NapCat_QQ配置文件 "$qq_num")"
-    [[ -f "$qf" ]] || return 1
-    port="$(jq -r '[.links[]? | select((.enabled==true) or (.enabled=="true") or (.enabled==null)) | .port] | first // empty' "$qf")"
-    [[ -n "$port" && "$port" != "null" ]] && { printf '%s' "$port"; return 0; }
-    printf '%s' "${NAPCAT_DEFAULT_PORT:-2537}"
 }
 
 NapCat_准备运行时() {
@@ -365,8 +250,6 @@ NapCat_卸载文件() {
         rm -f "${CONFIG_DIR}/napcat_${qq}.json"
         rm -f "${CONFIG_DIR}/onebot11_${qq}.json"
     done
-    # 不解绑脚本侧 QQ 配置；仅清 NapCat 安装树内旧 bot 文件
-    rm -f "$NAPCATBOT_FILE" 2>/dev/null
 }
 
 # ─── 安装流程（install.sh 调用） ─────────────────────────────
