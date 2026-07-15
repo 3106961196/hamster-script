@@ -99,9 +99,10 @@ napcat_scan_frameworks_json() {
         id="$(napcat_framework_id_from_root "$root")"
         label="$(napcat_framework_label "$root")"
         port="$(napcat_guess_framework_port "$root")"
+        # jq≤1.6：label 是保留字，不能用 --arg label / $label（键也须写成 "label"）
         frameworks="$(jq -n --argjson arr "$(napcat_json_or "$frameworks" '[]')" \
-            --arg id "$id" --arg label "$label" --arg root "$root" --argjson port "$port" \
-            '$arr + [{id:$id,"label":$label,root:$root,default_port:$port,
+            --arg id "$id" --arg fw_label "$label" --arg root "$root" --argjson port "$port" \
+            '$arr + [{id:$id,"label":$fw_label,root:$root,default_port:$port,
                       ws_host:"127.0.0.1",ws_path:"OneBotv11"}]')" || {
             NAPCAT_LAST_ERR="扫描框架失败: $root"
             continue
