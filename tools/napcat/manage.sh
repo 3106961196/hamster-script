@@ -267,7 +267,7 @@ _NapCat_添加框架交互() {
     label="$(napcat_framework_label "$path")"
     id="$(napcat_framework_id_from_root "$path")"
     fw="$(jq -n --arg id "$id" --arg label "$label" --arg root "$path" --argjson port "$port" \
-        '{id:$id,label:$label,root:$root,default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"}')" || {
+        '{id:$id,"label":$label,root:$root,default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"}')" || {
         界面警告 "生成框架 JSON 失败"; return 1
     }
     prefs="$(napcat_json_or "$(napcat_load_prefs)" '{}')"
