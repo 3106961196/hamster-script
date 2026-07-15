@@ -99,46 +99,58 @@ napcat_scan_frameworks_json() {
         id="$(napcat_framework_id_from_root "$root")"
         label="$(napcat_framework_label "$root")"
         port="$(napcat_guess_framework_port "$root")"
-        frameworks="$(jq -n --argjson arr "$frameworks" \
+        frameworks="$(jq -n --argjson arr "$(napcat_json_or "$frameworks" '[]')" \
             --arg id "$id" --arg label "$label" --arg root "$root" --argjson port "$port" \
-            '$arr + [{id:$id,label:$label,root:$root,default_port:$port,
-                      ws_host:"127.0.0.1",ws_path:"OneBotv11"}]')"
+            '$arr + [{id:$id,"label":$label,root:$root,default_port:$port,
+                      ws_host:"127.0.0.1",ws_path:"OneBotv11"}]')" || {
+            NAPCAT_LAST_ERR="扫描框架失败: $root"
+            continue
+        }
     done
     printf '%s' "$frameworks"
 }
 
 napcat_load_prefs() {
-    local f defaults err
+    local f defaults err scanned merged
     f="$(napcat_prefs_path)"
     defaults="$(jq -n '{
         webui_host:"0.0.0.0",webui_port:4071,webui_token:"",
         login_rate:3,disable_pty:true,frameworks:[]
     }')"
+    scanned="$(napcat_scan_frameworks_json)"
+    scanned="$(napcat_json_or "$scanned" '[]')"
+
     if [ -f "$f" ]; then
         if ! jq -e . "$f" >/dev/null 2>&1; then
             NAPCAT_LAST_ERR="napcat_prefs.json 损坏: $f"
-            echo "$defaults" | jq --argjson fw "$(napcat_scan_frameworks_json)" '.frameworks = $fw'
+            echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
             return 1
         fi
-        err="$(jq -s '.[1] * .[0]' <(cat "$f") <(echo "$defaults") \
-            | jq --argjson scanned "$(napcat_scan_frameworks_json)" \
-                '(.frameworks // []) as $saved |
-                 .frameworks = (
-                   reduce $scanned[] as $item ($saved;
-                     if any(.[]; .root == $item.root) then
-                       map(if .root == $item.root then $item else . end)
-                     else
-                       . + [$item]
-                     end)
-                 ) | del(.warn_public_webui)' 2>&1)" || {
-            NAPCAT_LAST_ERR="读取 napcat_prefs 失败: ${err:-未知错误}"
-            echo "$defaults" | jq --argjson fw "$(napcat_scan_frameworks_json)" '.frameworks = $fw'
+        # 不用 process substitution：部分环境 fd 空读会得到 null，触发 "* cannot be multiplied"
+        if ! merged="$(jq -n --argjson def "$defaults" --argjson file "$(jq -c . "$f")" \
+            '$def * $file | del(.warn_public_webui)' 2>&1)"; then
+            NAPCAT_LAST_ERR="读取 napcat_prefs 失败: ${merged:-未知错误}"
+            echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
             return 1
-        }
+        fi
+        if ! err="$(echo "$merged" | jq --argjson scanned "$scanned" \
+            '(.frameworks // []) as $saved |
+             .frameworks = (
+               reduce $scanned[] as $item ($saved;
+                 if any(.[]; .root == $item.root) then
+                   map(if .root == $item.root then $item else . end)
+                 else
+                   . + [$item]
+                 end)
+             )' 2>&1)"; then
+            NAPCAT_LAST_ERR="合并框架扫描失败: ${err:-未知错误}"
+            echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
+            return 1
+        fi
         printf '%s' "$err"
         return 0
     fi
-    echo "$defaults" | jq --argjson fw "$(napcat_scan_frameworks_json)" '.frameworks = $fw'
+    echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
 }
 
 napcat_save_prefs() {
