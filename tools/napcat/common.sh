@@ -1,5 +1,6 @@
 #!/bin/bash
 # NapCat 公共逻辑（install / manage / nt 共用，路径以 tool.conf 为准）
+# OneBot/WebUI/多框架：tools/napcat/security.sh（对齐 xrk napcat_security.sh）
 
 _NapCat_加载配置() {
     [[ -n "${_NAPCAT_CONF_LOADED:-}" ]] && return 0
@@ -11,10 +12,27 @@ _NapCat_加载配置() {
         # shellcheck source=/dev/null
         source <(sed 's/\r$//' "$dir/tool.conf")
     fi
+    # shellcheck source=/dev/null
+    source <(sed 's/\r$//' "$dir/security.sh")
+    if [[ -z "${NAPCAT_QQ_DIR:-}" ]]; then
+        NAPCAT_QQ_DIR="$(napcat_qq_dir)"
+    fi
+    export NAPCAT_QQ_DIR
+    NAPCAT_CONFIG_DIR="${NAPCAT_CONFIG_DIR:-$CONFIG_DIR}"
+    export NAPCAT_CONFIG_DIR
+    if [[ -z "${NAPCAT_PREFS_FILE:-}" ]]; then
+        NAPCAT_PREFS_FILE="$(napcat_prefs_path)"
+    fi
+    export NAPCAT_PREFS_FILE
+    mkdir -p "$NAPCAT_QQ_DIR" 2>/dev/null || true
     _NAPCAT_CONF_LOADED=1
 }
 
 NapCat_加载配置() { _NapCat_加载配置; }
+
+NapCat_QQ配置文件() {
+    printf '%s/qq_%s.json' "$(napcat_qq_dir)" "$1"
+}
 
 NapCat_是否已安装() {
     _NapCat_加载配置
@@ -47,8 +65,9 @@ NapCat_确保依赖() {
     fi
 }
 
+# [q]q 避免 pgrep 匹配自身命令行（对齐 xrk nt_napcat_running）
 NapCat_QQ匹配() {
-    echo "qq --no-sandbox"
+    echo '[q]q --no-sandbox'
 }
 
 NapCat_QQ是否运行() {
@@ -61,144 +80,218 @@ NapCat_是否运行中() {
 }
 
 NapCat_获取运行中QQ() {
-    pgrep -f "$(NapCat_QQ匹配)" 2>/dev/null | while read -r pid; do
-        tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null \
-            | grep -oP '\-q \K[0-9]+' 2>/dev/null
-    done | sort -u
+    local pid cmdline
+    while IFS= read -r pid; do
+        [[ -z "$pid" ]] && continue
+        cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
+        [[ "$cmdline" =~ -q[[:space:]]+([0-9]+) ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+    done < <(pgrep -f "$(NapCat_QQ匹配)" 2>/dev/null) | sort -u
+}
+
+# 将旧版 Napcatbot（qq+port 数组）迁移为 qq_*.json + 框架绑定
+NapCat_迁移旧Bot() {
+    _NapCat_加载配置
+    local qq_dir bot_file qq port fw_id fw links qf
+    qq_dir="$(napcat_qq_dir)"
+    bot_file="${NAPCATBOT_FILE:-}"
+    [[ -f "$bot_file" ]] || return 0
+    shopt -s nullglob
+    local existing=("${qq_dir}"/qq_*.json)
+    shopt -u nullglob
+    [[ ${#existing[@]} -gt 0 ]] && return 0
+
+    napcat_refresh_frameworks >/dev/null 2>&1 || true
+    while IFS=$'\t' read -r qq port; do
+        [[ -z "$qq" || -z "$port" ]] && continue
+        [[ -f "$(NapCat_QQ配置文件 "$qq")" ]] && continue
+        fw_id=""
+        fw="$(napcat_load_prefs | jq -c --argjson port "$port" \
+            '.frameworks[]? | select(.default_port == $port)' | head -n1)"
+        if [[ -z "$fw" ]]; then
+            fw="$(napcat_load_prefs | jq -c '.frameworks[0]?' )"
+        fi
+        if [[ -n "$fw" && "$fw" != "null" ]]; then
+            fw_id="$(echo "$fw" | jq -r '.id')"
+            [[ -z "$port" || "$port" == "null" ]] && port="$(echo "$fw" | jq -r '.default_port')"
+        else
+            # 无框架时写入 manual 占位，仍可按端口连反向 WS
+            fw_id="manual"
+            local prefs
+            prefs="$(napcat_load_prefs)"
+            napcat_save_prefs "$(echo "$prefs" | jq --argjson port "${port:-2537}" '
+                (.frameworks // []) as $f |
+                if any($f[]; .id == "manual") then
+                    .frameworks = [$f[] | if .id == "manual" then .default_port = $port else . end]
+                else
+                    .frameworks = $f + [{
+                        id:"manual",label:"自定义",root:"",
+                        default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"
+                    }]
+                end
+            ')" 2>/dev/null || true
+        fi
+        links="$(jq -n --arg id "$fw_id" --argjson port "${port:-2537}" \
+            '[{framework_id:$id,enabled:true,port:$port,token:""}]')"
+        qf="$(NapCat_QQ配置文件 "$qq")"
+        jq -n --arg qq "$qq" --argjson links "$links" \
+            '{qq:$qq,ob_token:"",links:$links,console_log:true,file_log:false}' > "$qf"
+    done < <(jq -r '.[]? | "\(.qq)\t\(.port)"' "$bot_file" 2>/dev/null)
 }
 
 NapCat_确保Bot() {
     _NapCat_加载配置
-    if [[ ! -f "$NAPCATBOT_FILE" ]]; then
-        mkdir -p "$(dirname "$NAPCATBOT_FILE")"
-        echo '[]' > "$NAPCATBOT_FILE"
+    mkdir -p "$(napcat_qq_dir)"
+    NapCat_迁移旧Bot
+}
+
+# 快捷写入：单框架端口（nt <QQ> [port] / 旧 UI）；有已存 links 时只改匹配端口
+NapCat_添加或更新QQ() {
+    local qq_num="$1"
+    local port="${2:-}"
+    local qf links fw fw_id prefs
+    _NapCat_加载配置
+    NapCat_确保Bot
+    napcat_refresh_frameworks >/dev/null 2>&1 || true
+    qf="$(NapCat_QQ配置文件 "$qq_num")"
+
+    if [[ -z "$port" ]]; then
+        port="$NAPCAT_DEFAULT_PORT"
+    fi
+    if ! [[ "$port" =~ ^[0-9]+$ ]]; then
+        echo "无效端口: $port" >&2
+        return 1
+    fi
+
+    fw="$(napcat_load_prefs | jq -c --argjson port "$port" \
+        '.frameworks[]? | select(.default_port == $port)' | head -n1)"
+    [[ -z "$fw" || "$fw" == "null" ]] && fw="$(napcat_load_prefs | jq -c '.frameworks[0]?')"
+    if [[ -z "$fw" || "$fw" == "null" ]]; then
+        prefs="$(napcat_load_prefs)"
+        napcat_save_prefs "$(echo "$prefs" | jq --argjson port "$port" '
+            (.frameworks // []) as $f |
+            if any($f[]; .id == "manual") then
+                .frameworks = [$f[] | if .id == "manual" then .default_port = $port else . end]
+            else
+                .frameworks = $f + [{
+                    id:"manual",label:"自定义",root:"",
+                    default_port:$port,ws_host:"127.0.0.1",ws_path:"OneBotv11"
+                }]
+            end
+        ')" || return 1
+        fw_id="manual"
+    else
+        fw_id="$(echo "$fw" | jq -r '.id')"
+    fi
+
+    if [[ -f "$qf" ]]; then
+        links="$(jq -c --arg id "$fw_id" --argjson port "$port" '
+            .links = (
+                if any(.links[]?; .framework_id == $id) then
+                    [.links[] | if .framework_id == $id then .port = $port | .enabled = true else . end]
+                else
+                    (.links // []) + [{framework_id:$id,enabled:true,port:$port,token:""}]
+                end
+            ) | .links
+        ' "$qf")"
+        jq --argjson links "$links" '.links = $links' "$qf" > "${qf}.tmp" && mv "${qf}.tmp" "$qf"
+    else
+        links="$(jq -n --arg id "$fw_id" --argjson port "$port" \
+            '[{framework_id:$id,enabled:true,port:$port,token:""}]')"
+        jq -n --arg qq "$qq_num" --argjson links "$links" \
+            '{qq:$qq,ob_token:"",links:$links,console_log:true,file_log:false}' > "$qf"
     fi
 }
 
-NapCat_添加或更新QQ() {
-    local qq_num="$1"
-    local port="$2"
+NapCat_保存QQ配置() {
+    local qq="$1" links="$2" ob_token="${3:-}" old_qq="${4:-}"
+    local qf
     _NapCat_加载配置
-    NapCat_确保Bot
-
-    local tmp="${NAPCATBOT_FILE}.tmp"
-    jq --arg qq "$qq_num" --argjson port "$port" \
-        'if any(.[]; .qq == $qq) then
-            map(if .qq == $qq then .port = $port else . end)
-        else
-            . + [{"qq": $qq, "port": $port}]
-        end' \
-        "$NAPCATBOT_FILE" > "$tmp" || { rm -f "$tmp"; return 1; }
-    mv "$tmp" "$NAPCATBOT_FILE"
+    mkdir -p "$(napcat_qq_dir)"
+    qf="$(NapCat_QQ配置文件 "$qq")"
+    jq -n --arg qq "$qq" --arg ob "$ob_token" --argjson links "$links" \
+        '{qq:$qq,ob_token:$ob,links:$links,console_log:true,file_log:false}' > "$qf"
+    if [[ -n "$old_qq" && "$old_qq" != "$qq" ]]; then
+        rm -f "$(NapCat_QQ配置文件 "$old_qq")"
+        rm -f "${CONFIG_DIR}/napcat_${old_qq}.json" "${CONFIG_DIR}/onebot11_${old_qq}.json"
+    fi
 }
 
 NapCat_获取QQ列表() {
     _NapCat_加载配置
-    [[ -f "$NAPCATBOT_FILE" ]] && jq -r '.[].qq' "$NAPCATBOT_FILE" 2>/dev/null
+    NapCat_确保Bot
+    local qq_dir qf
+    qq_dir="$(napcat_qq_dir)"
+    shopt -s nullglob
+    for qf in "${qq_dir}"/qq_*.json; do
+        basename "$qf" | sed 's/^qq_//;s/\.json$//'
+    done
+    shopt -u nullglob
 }
 
 NapCat_获取QQ端口() {
-    local qq_num="$1"
+    local qq_num="$1" qf port
     _NapCat_加载配置
-    [[ -f "$NAPCATBOT_FILE" ]] && \
-        jq -r --arg qq "$qq_num" '.[] | select(.qq == $qq) | .port' "$NAPCATBOT_FILE" 2>/dev/null
+    qf="$(NapCat_QQ配置文件 "$qq_num")"
+    [[ -f "$qf" ]] || return 1
+    port="$(jq -r '[.links[]? | select((.enabled==true) or (.enabled=="true") or (.enabled==null)) | .port] | first // empty' "$qf")"
+    [[ -n "$port" && "$port" != "null" ]] && { printf '%s' "$port"; return 0; }
+    printf '%s' "${NAPCAT_DEFAULT_PORT:-2537}"
 }
 
-NapCat_生成配置() {
+NapCat_准备运行时() {
     local qq_num="$1"
-    local port="$2"
+    local qf
     _NapCat_加载配置
-    mkdir -p "$CONFIG_DIR"
-
-    cat > "${CONFIG_DIR}/napcat_${qq_num}.json" << EOF
-{
-    "fileLog": false,
-    "consoleLog": true,
-    "fileLogLevel": "debug",
-    "consoleLogLevel": "info",
-    "packetBackend": "auto",
-    "packetServer": ""
-}
-EOF
-
-    local reverse_ws_url="ws://127.0.0.1:${port}/OneBotv11"
-    cat > "${CONFIG_DIR}/onebot11_${qq_num}.json" << EOF
-{
-  "network": {
-    "httpServers": [
-      {
-        "name": "http-server",
-        "enable": false,
-        "port": 3000,
-        "host": "",
-        "enableCors": true,
-        "enableWebsocket": true,
-        "messagePostFormat": "array",
-        "token": "",
-        "debug": false
-      }
-    ],
-    "httpClients": [],
-    "websocketServers": [
-      {
-        "name": "websocket-server",
-        "enable": false,
-        "host": "",
-        "port": 3001,
-        "messagePostFormat": "array",
-        "reportSelfMessage": true,
-        "token": "",
-        "enableForcePushEvent": true,
-        "debug": false,
-        "heartInterval": 30000
-      }
-    ],
-    "websocketClients": [
-      {
-        "name": "websocket-client",
-        "enable": true,
-        "url": "${reverse_ws_url}",
-        "messagePostFormat": "array",
-        "reportSelfMessage": true,
-        "reconnectInterval": 5000,
-        "token": "",
-        "debug": false,
-        "heartInterval": 30000
-      }
-    ]
-  },
-  "musicSignUrl": "",
-  "enableLocalFile2Url": true
-}
-EOF
+    qf="$(NapCat_QQ配置文件 "$qq_num")"
+    [[ -f "$qf" ]] || { NAPCAT_LAST_ERR="无配置: $qf"; return 1; }
+    napcat_prepare_runtime "$qq_num" "$qf"
 }
 
 NapCat_启动QQ() {
     local qq_num="$1"
+    local qf qq_cmd="${QQ_BIN}" line url
     _NapCat_加载配置
 
-    if [[ ! -f "$NAPCATBOT_FILE" ]] \
-        || ! jq -e --arg qq "$qq_num" 'any(.[]; .qq == $qq)' "$NAPCATBOT_FILE" &>/dev/null; then
+    qf="$(NapCat_QQ配置文件 "$qq_num")"
+    if [[ ! -f "$qf" ]]; then
         echo "找不到 QQ $qq_num 的配置，请先添加账号" >&2
         return 1
     fi
-
-    local port qq_cmd="${QQ_BIN}"
-    port=$(NapCat_获取QQ端口 "$qq_num")
-    [[ -z "$port" ]] && port="$NAPCAT_DEFAULT_PORT"
 
     if ! NapCat_是否就绪; then
         echo "NapCat 未正确安装，请先运行安装脚本" >&2
         return 1
     fi
 
-    NapCat_生成配置 "$qq_num" "$port"
+    if NapCat_QQ是否运行 "$qq_num"; then
+        echo "QQ $qq_num 已在运行。先停止：nt 菜单「停止 QQ」，或 pkill -f 'qq --no-sandbox -q $qq_num'" >&2
+        return 1
+    fi
+
+    # 其它 QQ 在跑时仍可启动本号；WebUI 可能写失败，prepare 会降级只同步 OneBot
+    NapCat_准备运行时 "$qq_num" || {
+        echo "启动前同步失败: ${NAPCAT_LAST_ERR:-未知错误}" >&2
+        echo "请先停止所有 QQ（修改 WebUI/onebot 需进程已退出），或: nt --sync-onebot $qq_num" >&2
+        return 1
+    }
+
     export DISPLAY="${DISPLAY:-:99}"
     command -v qq &>/dev/null && qq_cmd="qq"
 
     clear 2>/dev/null || true
     killall dialog 2>/dev/null || true
-    echo "正在启动 QQ $qq_num（端口: $port）..."
+    echo "┌─ NapCat 启动 ─────────────────"
+    echo "│ QQ: $qq_num"
+    while IFS= read -r line; do
+        [[ -z "$line" ]] && continue
+        echo "│ → $line"
+    done < <(napcat_format_connection_lines "$qf")
+    if url="$(napcat_webui_url 2>/dev/null)"; then
+        echo "│ WebUI（全局）: $url"
+    else
+        echo "│ WebUI: 关闭"
+    fi
+    echo "└──────────────────────────────"
     exec xvfb-run -a "$qq_cmd" --no-sandbox -q "$qq_num"
 }
 
@@ -227,14 +320,7 @@ NapCat_移除QQ() {
     local qq_num="$1"
     _NapCat_加载配置
     NapCat_停止QQ "$qq_num" 2>/dev/null || true
-
-    if [[ -f "$NAPCATBOT_FILE" ]]; then
-        local tmp="${NAPCATBOT_FILE}.tmp"
-        jq --arg qq "$qq_num" 'map(select(.qq != $qq))' "$NAPCATBOT_FILE" > "$tmp" \
-            || { rm -f "$tmp"; return 1; }
-        mv "$tmp" "$NAPCATBOT_FILE"
-    fi
-
+    rm -f "$(NapCat_QQ配置文件 "$qq_num")"
     rm -f "${CONFIG_DIR}/napcat_${qq_num}.json"
     rm -f "${CONFIG_DIR}/onebot11_${qq_num}.json"
 }
@@ -279,6 +365,7 @@ NapCat_卸载文件() {
         rm -f "${CONFIG_DIR}/napcat_${qq}.json"
         rm -f "${CONFIG_DIR}/onebot11_${qq}.json"
     done
+    # 不解绑脚本侧 QQ 配置；仅清 NapCat 安装树内旧 bot 文件
     rm -f "$NAPCATBOT_FILE" 2>/dev/null
 }
 
@@ -469,9 +556,16 @@ NapCat_执行安装() {
     NapCat_链接QQ命令 2>/dev/null || true
     type 安装_后处理 &>/dev/null && 安装_后处理 "$PROJECT_ROOT" 2>/dev/null || true
 
+    mkdir -p "$(napcat_qq_dir)" 2>/dev/null || true
+    napcat_refresh_frameworks >/dev/null 2>&1 || true
+    if ! NapCat_是否运行中; then
+        napcat_apply_webui 2>/dev/null || true
+    fi
+
     日志成功 "NapCat 安装完成"
-    日志信息 "WEBUI: ${CONFIG_DIR}/webui.json"
-    日志信息 "启动: nt [QQ号] [端口]"
+    日志信息 "WEBUI: $(napcat_webui_file) （默认 http://<IP>:4071/webui）"
+    日志信息 "QQ 绑定: $(napcat_qq_dir)/qq_<QQ>.json"
+    日志信息 "启动: nt <QQ号>   管理: nt"
     return 0
 }
 

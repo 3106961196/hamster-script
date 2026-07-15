@@ -21,7 +21,11 @@ sudo ./setup.sh
 ```bash
 cs              # 主菜单
 cs update       # 更新
-nt [QQ] [端口]  # NapCat
+nt              # NapCat 管理（多 QQ · 多框架 · WebUI）
+nt <QQ>         # 启动已配置 QQ
+nt <QQ> <端口>  # 快捷绑定并启动
+nt --sync-onebot <QQ>  # 仅同步 onebot（需先停 QQ）
+nt --webui-apply       # 合并写入 webui.json（需先停 QQ）
 hamster-tmux    # tmux 桌面
 ```
 

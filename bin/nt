@@ -31,9 +31,65 @@ source "$_entry"
 工具_加载 "$PROJECT_ROOT/tools/napcat/install.sh"
 NapCat_加载配置
 NapCat_确保依赖 || exit 1
+NapCat_确保Bot
+
+_nt_help() {
+    cat <<'EOF'
+用法:
+  nt                     管理菜单（多 QQ · 多框架 · WebUI）
+  nt <QQ>                启动已配置账号（前台 xvfb-run）
+  nt <QQ> <端口>         快捷绑定端口（自动匹配/创建框架）并启动
+  nt --sync-onebot <QQ>  仅同步 onebot11（需先停 QQ）
+  nt --webui-apply       将 prefs 合并写入 webui.json（需先停 QQ）
+
+说明:
+  · QQ 绑定存脚本侧 data/napcat/qq_<QQ>.json（重装 NapCat 不丢）
+  · 可多选框架；启动前自动生成 onebot11_* 并校验
+  · 改 WebUI / 同步 onebot 时请先停止 QQ，否则 NapCat 会写回内存配置
+EOF
+}
+
+case "${1:-}" in
+    -h|--help)
+        _nt_help
+        exit 0
+        ;;
+    --sync-onebot)
+        [[ -n "${2:-}" ]] || { echo "用法: nt --sync-onebot <QQ>"; exit 1; }
+        if NapCat_是否运行中; then
+            echo "[nt] QQ 正在运行，请先停止再同步 onebot"
+            exit 1
+        fi
+        NapCat_准备运行时 "$2" || {
+            echo "[nt ERROR] ${NAPCAT_LAST_ERR:-同步失败}"
+            exit 1
+        }
+        echo "[nt] onebot 已同步:"
+        napcat_format_connection_lines "$(NapCat_QQ配置文件 "$2")" | sed 's/^/  /'
+        exit 0
+        ;;
+    --webui-apply)
+        if NapCat_是否运行中; then
+            echo "[nt] NapCat/QQ 正在运行，请先 stop 再改 WebUI" >&2
+            exit 1
+        fi
+        napcat_apply_webui || {
+            echo "[nt] ${NAPCAT_LAST_ERR:-apply failed}" >&2
+            exit 1
+        }
+        echo "[nt] webui 已写入: $(napcat_webui_file)"
+        exit 0
+        ;;
+esac
 
 if [[ -n "${1:-}" ]]; then
-    NapCat_添加或更新QQ "$1" "${2:-${NAPCAT_DEFAULT_PORT:-2537}}"
+    if [[ -n "${2:-}" ]]; then
+        NapCat_添加或更新QQ "$1" "$2" || exit 1
+    fi
+    if [[ ! -f "$(NapCat_QQ配置文件 "$1")" ]]; then
+        echo "无 qq_$1.json，请先运行 nt 配置，或: nt $1 <端口>"
+        exit 1
+    fi
     NapCat_启动QQ "$1"
 fi
 

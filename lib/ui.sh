@@ -92,26 +92,53 @@ _界面选择对话框() {
     shift 5
     local items=("$@")
 
-    local pair_count=$(( ${#items[@]} / 2 ))
+    local box_type="--menu"
+    local stride=2
+    [[ "$mode" == "checklist" ]] && box_type="--checklist"
+
+    # checklist：支持「tag item status」三元组；若为「tag item」对则默认 off
+    if [[ "$mode" == "checklist" && ${#items[@]} -gt 0 ]]; then
+        local sample="${items[2]:-}"
+        case "$sample" in
+            on|off|ON|OFF) stride=3 ;;
+            *)
+                local rebuilt=() i=0
+                while [[ $i -lt ${#items[@]} ]]; do
+                    rebuilt+=("${items[$i]}" "${items[$((i + 1))]}" "off")
+                    i=$((i + 2))
+                done
+                items=("${rebuilt[@]}")
+                stride=3
+                ;;
+        esac
+    fi
+
+    local pair_count=$(( ${#items[@]} / stride ))
     [[ -n "$extra_key" && -n "$extra_label" ]] && pair_count=$((pair_count + 1))
 
     local box_h box_w menu_h
     read -r box_h box_w menu_h < <(_界面_计算菜单尺寸 "$pair_count")
 
-    local box_type="--menu"
-    [[ "$mode" == "checklist" ]] && box_type="--checklist"
-
-    local cmd=(dialog --clear --stdout --backtitle "$UI_BACKTITLE" --title "$title"
-        "$box_type" "$prompt" "$box_h" "$box_w" "$menu_h")
+    local cmd=(dialog --clear --stdout --backtitle "$UI_BACKTITLE" --title "$title")
+    [[ "$mode" == "checklist" ]] && cmd+=(--separate-output)
+    cmd+=("$box_type" "$prompt" "$box_h" "$box_w" "$menu_h")
 
     local i=0
     while [[ $i -lt ${#items[@]} ]]; do
-        cmd+=("${items[$i]}" "${items[$((i + 1))]}")
-        i=$((i + 2))
+        if [[ $stride -eq 3 ]]; then
+            cmd+=("${items[$i]}" "${items[$((i + 1))]}" "${items[$((i + 2))]}")
+        else
+            cmd+=("${items[$i]}" "${items[$((i + 1))]}")
+        fi
+        i=$((i + stride))
     done
 
     if [[ -n "$extra_key" && -n "$extra_label" ]]; then
-        cmd+=("$extra_key" "$extra_label")
+        if [[ "$mode" == "checklist" ]]; then
+            cmd+=("$extra_key" "$extra_label" "off")
+        else
+            cmd+=("$extra_key" "$extra_label")
+        fi
     fi
 
     local result rc=0
