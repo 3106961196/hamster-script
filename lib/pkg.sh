@@ -306,7 +306,7 @@ _包管理_分发安装() {
 
     case "$package" in
         linuxqq)
-            日志错误 "linuxqq 不在 apt 源中，请通过 NapCat 安装（自动下载腾讯 QQ.deb）"
+            日志错误 "linuxqq 不在 apt 源中，请通过 NapCat 安装（自动从镜像下载 QQ 安装包）"
             return 1
             ;;
         chromium) 包管理_确保Chromium ;;
