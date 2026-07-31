@@ -74,7 +74,8 @@ _NapCat_选择QQ() {
     _PICKED_QQ=""
     NapCat_确保Bot
 
-    local items=() qq summary
+    local items=() qq summary idx=1 selected
+    local -a qq_list=()
     local list
     list=$(NapCat_获取QQ列表)
     if [[ -z "$list" ]]; then
@@ -85,12 +86,18 @@ _NapCat_选择QQ() {
     while IFS= read -r qq; do
         [[ -z "$qq" ]] && continue
         summary="$(napcat_qq_links_summary "$(NapCat_QQ配置文件 "$qq")")"
-        items+=("$qq" "QQ ${qq}  ${summary}")
+        qq_list+=("$qq")
+        items+=("$idx" "QQ ${qq}  ${summary}")
+        idx=$((idx + 1))
     done <<< "$list"
 
     [[ ${#items[@]} -eq 0 ]] && { 界面警告 "账号列表为空"; return 1; }
-    _PICKED_QQ=$(界面选择 "$title" "选择 QQ 账号:" "${items[@]}")
-    界面有选择 "$_PICKED_QQ"
+    selected=$(界面选择 "$title" "选择 QQ 账号:" "${items[@]}")
+    界面有选择 "$selected" || return 1
+    if ! [[ "$selected" =~ ^[0-9]+$ ]] || [[ "$selected" -lt 1 || "$selected" -gt ${#qq_list[@]} ]]; then
+        return 1
+    fi
+    _PICKED_QQ="${qq_list[$((selected - 1))]}"
 }
 
 _NapCat_勾选框架() {
@@ -139,69 +146,75 @@ _NapCat_由勾选生成Links() {
     printf '%s' "$(napcat_json_or "$links" '[]')"
 }
 
-_NapCat_微调端口() {
-    local links="$1" out='[]' link id fw label port new_port root
-    links="$(napcat_json_or "$links" '[]')"
-    while IFS= read -r link; do
-        [[ -z "$link" ]] && continue
-        id="$(echo "$link" | jq -r '.framework_id // empty')"
-        [[ -n "$id" ]] || continue
-        fw="$(napcat_get_framework "$id" 2>/dev/null)" || continue
-        [[ -n "$fw" ]] || continue
-        root="$(echo "$fw" | jq -r '.root // empty')"
-        label="$(echo "$fw" | jq -r '.label // .id')"
-        port="$(napcat_coerce_port "$(echo "$link" | jq -r '.port // empty')" "$(napcat_guess_framework_port "$root")")"
-        new_port=$(界面输入 "$label 监听端口" "$port")
-        [[ -z "$new_port" ]] && new_port="$port"
-        if ! [[ "$new_port" =~ ^[0-9]+$ ]] || [[ "$new_port" -lt 1 || "$new_port" -gt 65535 ]]; then
-            界面警告 "端口无效，保留 $port"
-            new_port="$port"
-        fi
-        new_port="$(napcat_coerce_port "$new_port" "$port")"
-        link="$(echo "$link" | jq --argjson port "$new_port" '.port=$port')" || continue
-        out="$(jq -n --argjson a "$(napcat_json_or "$out" '[]')" --argjson l "$(napcat_json_or "$link" '{}')" '$a + [$l]')" || continue
-    done < <(echo "$links" | jq -c '.[]?')
-    printf '%s' "$(napcat_json_or "$out" '[]')"
-}
-
 _NapCat_QQ向导() {
-    local title="$1" old_qq="${2:-}" wqq ob checklist links qf values st
+    local title="$1" old_qq="${2:-}" wqq port checklist links qf values st
+    local src_qq def_port="2537" fw0
     qf=""
     [[ -n "$old_qq" && -f "$(NapCat_QQ配置文件 "$old_qq")" ]] && qf="$(NapCat_QQ配置文件 "$old_qq")"
 
-    local def_ob=""
-    [[ -n "$qf" ]] && def_ob="$(jq -r '.ob_token // ""' "$qf")"
+    # 默认端口：已有绑定 > 首个已注册框架 > 2537
+    if [[ -n "$qf" ]]; then
+        def_port="$(jq -r '[.links[]?|select((.enabled==true) or (.enabled=="true") or (.enabled==null))|.port]|first // empty' "$qf" 2>/dev/null || true)"
+        [[ -z "$def_port" ]] && def_port="$(jq -r '.links[0].port // empty' "$qf" 2>/dev/null || true)"
+    fi
+    if [[ -z "$def_port" || "$def_port" == "null" ]]; then
+        fw0="$(napcat_load_prefs 2>/dev/null | jq -c '.frameworks[0]?' 2>/dev/null || true)"
+        [[ -n "$fw0" && "$fw0" != "null" ]] && def_port="$(echo "$fw0" | jq -r '.default_port // empty')"
+    fi
+    def_port="$(napcat_coerce_port "$def_port" "2537")"
 
     _NapCat_dialog捕获 values --title "$title" --form \
-        "第1步：填写 QQ · 点 OK 进入第2步勾选框架" 11 58 2 \
+        "填写 QQ 与框架端口 · 登录默认扫码（无需 Token）" 12 62 2 \
         "QQ 账号:" 1 1 "$(_NapCat_表单默认 "${old_qq:-}")" 1 12 36 0 \
-        "全局Token:" 2 1 "$(_NapCat_表单默认 "$def_ob")" 2 12 36 0
+        "框架端口:" 2 1 "$(_NapCat_表单默认 "$def_port")" 2 12 36 0
     st=$?
     [[ "$st" -eq 0 ]] || return 1
-    _NapCat_解析表单 "$values" 2 wqq ob || {
+    _NapCat_解析表单 "$values" 2 wqq port || {
         界面警告 "QQ 表单解析失败\n${NAPCAT_LAST_ERR:-}"
         return 1
     }
     wqq="$(_NapCat_字段修剪 "$wqq")"
+    port="$(_NapCat_字段修剪 "$port")"
     [[ -z "$wqq" ]] && { 界面警告 "QQ 账号不能为空"; return 1; }
     if ! [[ "$wqq" =~ ^[0-9]{5,15}$ ]]; then
         界面警告 "QQ 号格式无效\n请输入 5-15 位数字"
         return 1
     fi
+    if ! [[ "$port" =~ ^[0-9]+$ ]] || [[ "$port" -lt 1 || "$port" -gt 65535 ]]; then
+        界面警告 "端口无效\n请输入 1-65535"
+        return 1
+    fi
+    port="$(napcat_coerce_port "$port" "$def_port")"
+
+    # 新增：禁止覆盖已有账号；改号：禁止撞上其它已有账号
+    if [[ -z "$old_qq" && -f "$(NapCat_QQ配置文件 "$wqq")" ]]; then
+        界面警告 "QQ $wqq 已存在\n请用「修改配置」，或先删除再新增"
+        return 1
+    fi
+    if [[ -n "$old_qq" && "$old_qq" != "$wqq" && -f "$(NapCat_QQ配置文件 "$wqq")" ]]; then
+        界面警告 "目标 QQ $wqq 已存在，无法改号覆盖\n请先删除 $wqq，或保持原号修改"
+        return 1
+    fi
 
     napcat_refresh_frameworks >/dev/null 2>&1 || true
-    checklist="$(_NapCat_勾选框架 "$wqq")" || return 1
-    links="$(_NapCat_由勾选生成Links "$wqq" "$checklist")"
+    src_qq="${old_qq:-$wqq}"
+    checklist="$(_NapCat_勾选框架 "$src_qq")" || return 1
+    links="$(_NapCat_由勾选生成Links "$src_qq" "$checklist")"
     if [[ "$(echo "$links" | jq 'length')" -eq 0 ]]; then
         界面警告 "请至少选择一个框架"
         return 1
     fi
+    # 统一端口；token 留空（鉴权走框架 api_key；登录扫码）
+    links="$(echo "$links" | jq --argjson port "$port" 'map(.port=$port | .token="")')" || {
+        界面警告 "写入端口失败"
+        return 1
+    }
 
-    if 界面确认 "为每个框架确认端口？" "端口确认"; then
-        links="$(_NapCat_微调端口 "$links")" || return 1
-    fi
-
-    NapCat_保存QQ配置 "$wqq" "$links" "$ob" "$old_qq"
+    # ob_token 留空：扫码登录，token 由框架 api_key 自动解析
+    NapCat_保存QQ配置 "$wqq" "$links" "" "$old_qq" || {
+        界面警告 "保存失败\n${NAPCAT_LAST_ERR:-}"
+        return 1
+    }
     if ! NapCat_是否运行中; then
         NapCat_准备运行时 "$wqq" || {
             界面警告 "QQ 已保存，但 onebot 同步失败\n${NAPCAT_LAST_ERR:-}\n请先停止 QQ 后重试（或 nt --sync-onebot $wqq）"
@@ -217,7 +230,7 @@ _NapCat_QQ向导() {
 _NapCat_交互添加QQ() {
     _WIZARD_QQ=""
     _NapCat_QQ向导 "新增 QQ" || return 0
-    界面完成 "已保存 QQ $_WIZARD_QQ"
+    界面完成 "已保存 QQ $_WIZARD_QQ\n登录方式：扫码（无需 Token）"
     if 界面确认 "立即启动 $_WIZARD_QQ？" "启动确认"; then
         NapCat_是否就绪 || { 界面警告 "NapCat 未正确安装"; return 1; }
         NapCat_启动QQ "$_WIZARD_QQ"
@@ -228,13 +241,16 @@ _NapCat_交互修改QQ() {
     _NapCat_选择QQ "修改 QQ 配置" || return 0
     _WIZARD_QQ=""
     _NapCat_QQ向导 "修改 $_PICKED_QQ" "$_PICKED_QQ" || return 0
-    界面完成 "已保存 QQ $_WIZARD_QQ"
+    界面完成 "已保存 QQ $_WIZARD_QQ\n登录方式：扫码（无需 Token）"
 }
 
 _NapCat_交互删除QQ() {
     _NapCat_选择QQ "删除 QQ 账号" || return 0
-    界面确认 "确定删除 QQ $_PICKED_QQ ？\n\n将停止进程并删除绑定配置" "删除确认" || return 0
-    NapCat_移除QQ "$_PICKED_QQ" || { 界面警告 "删除失败"; return 1; }
+    界面确认 "确定删除 QQ $_PICKED_QQ ？\n\n将停止进程并删除：\n· 脚本绑定 qq_${_PICKED_QQ}.json\n· onebot/napcat 运行配置" "删除确认" || return 0
+    if ! NapCat_移除QQ "$_PICKED_QQ"; then
+        界面警告 "删除失败\n${NAPCAT_LAST_ERR:-未知错误}"
+        return 1
+    fi
     界面完成 "已删除 QQ $_PICKED_QQ"
 }
 
@@ -439,10 +455,13 @@ _NapCat_显示全部状态() {
     {
         if NapCat_是否就绪; then
             echo "安装: 已就绪  v$(jq -r '.version' "${TOOL_INSTALL_DIR}/package.json" 2>/dev/null)"
+            echo "目录: ${TOOL_INSTALL_DIR}"
         elif NapCat_是否已安装; then
             echo "安装: 文件存在，未完成注入"
+            echo "目录: ${TOOL_INSTALL_DIR}"
         else
             echo "安装: 未安装"
+            echo "将安装到: ${TOOL_INSTALL_DIR}"
         fi
         echo ""
         echo "运行中 QQ:"
@@ -477,7 +496,7 @@ _NapCat_重装项目() {
 }
 
 _NapCat_卸载项目() {
-    界面确认 "卸载 NapCat 将清空 /opt/QQ 内 NapCat 与注入\n\n脚本侧 QQ 绑定（data/napcat）默认保留\n\n确定？" "卸载确认" || return 0
+    界面确认 "卸载 NapCat 将清空：\n\n· ${TOOL_INSTALL_DIR}\n· QQ 注入（loadNapCat.js）\n\nLinuxQQ（${QQ_ROOT}）与脚本侧 QQ 绑定默认保留\n\n确定？" "卸载确认" || return 0
     NapCat_卸载文件
     if 界面确认 "同时删除脚本侧 QQ 绑定与 prefs？\n$(napcat_qq_dir)"; then
         rm -rf "$(napcat_qq_dir)" 2>/dev/null || true

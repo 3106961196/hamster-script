@@ -13,14 +13,21 @@ _GITHUB_PROXIES=(
     "https://gitclone.com/github.com"
 )
 
-# 检测是否国内（时区判断，不依赖网络）
-_是否国内() {
-    local tz="${TZ:-}"
-    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || echo "")
+# 国内时区白名单（与 lib/github.sh 对齐；禁止用 *"Asia"*，避免东京/新加坡等误判）
+_国内时区白名单匹配() {
+    local tz="$1"
     case "$tz" in
         Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
         |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
     esac
+    return 1
+}
+
+# 检测是否国内（时区判断，不依赖网络；用于 GitHub 代理克隆）
+_是否国内() {
+    local tz="${TZ:-}"
+    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || echo "")
+    _国内时区白名单匹配 "$tz" && return 0
     [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
         | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
 }
@@ -105,7 +112,8 @@ _配置时区() {
     local tz
     tz=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "")
     case "$tz" in
-        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Hong_Kong|Asia/Taipei) return 0 ;;
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
+        |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
     esac
     _是否国内服务器 || return 0
     echo "[setup] 系统时区为 ${tz:-未知}，设置为 Asia/Shanghai…"
@@ -140,19 +148,23 @@ _安装前引导() {
     fi
 }
 
+# 国内才自动换 apt 源：时区白名单 或 IP=CN；不确定则不换
 _是否国内服务器() {
-    # 方式 1：时区判断
-    local tz="${TZ:-}"
-    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || timedatectl show 2>/dev/null | grep -oP 'Timezone=\K.*' || echo "")
-    [[ "$tz" == *"Shanghai"* || "$tz" == *"Chongqing"* || "$tz" == *"Asia"* ]] && return 0
-    
-    # 方式 2：IP 判断（备用）
+    local tz="${TZ:-}" country
+
+    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || true)
+    [[ -z "$tz" ]] && tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
+    _国内时区白名单匹配 "$tz" && return 0
+    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
+        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)' \
+        && return 0
+
     if command -v curl &>/dev/null; then
-        local country
         country=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null || echo "")
+        country=$(printf '%s' "$country" | tr -d '\r\n[:space:]')
         [[ "$country" == "CN" ]] && return 0
     fi
-    
+
     return 1
 }
 

@@ -1,8 +1,8 @@
 #!/bin/bash
 # NapCat / OneBot / WebUI（对齐 xrk napcat_security.sh；nt / install / manage 共用）
 # NapCat 反向 WS: Authorization: Bearer <token>, X-Self-ID, User-Agent: OneBot/11
+# 配置目录：work_dir/NapCat/config（由 common.sh 导出；默认 /root/cs/NapCat/config）
 
-NAPCAT_CONFIG_DIR="${NAPCAT_CONFIG_DIR:-/opt/QQ/resources/app/app_launcher/napcat/config}"
 NAPCAT_LAST_ERR=""
 
 # --argjson 只接受合法 JSON；空串/null 会直接报错
@@ -114,8 +114,9 @@ napcat_scan_frameworks_json() {
 napcat_load_prefs() {
     local f defaults err scanned merged
     f="$(napcat_prefs_path)"
+    # 默认只监听本机：未打算用公网 WebUI 时更安全；要外网可在 nt 里改 host
     defaults="$(jq -n '{
-        webui_host:"0.0.0.0",webui_port:4071,webui_token:"",
+        webui_host:"127.0.0.1",webui_port:4071,webui_token:"",
         login_rate:3,disable_pty:true,frameworks:[]
     }')"
     scanned="$(napcat_scan_frameworks_json)"
@@ -392,7 +393,7 @@ napcat_webui_file() {
 
 napcat_read_webui() {
     local wf; wf="$(napcat_webui_file)"
-    [ -f "$wf" ] && jq -c . "$wf" 2>/dev/null || jq -n '{host:"0.0.0.0",port:4071,token:"",loginRate:3}'
+    [ -f "$wf" ] && jq -c . "$wf" 2>/dev/null || jq -n '{host:"127.0.0.1",port:4071,token:"",loginRate:3}'
 }
 
 # 表单/状态展示：以 webui.json 为准（NapCat 运行后会写回完整 schema）
@@ -405,7 +406,7 @@ napcat_webui_effective() {
         --argjson w "$w" \
         --argjson p "$prefs" \
         '{
-            host: ($w.host // $p.webui_host // "0.0.0.0"),
+            host: ($w.host // $p.webui_host // "127.0.0.1"),
             port: ($w.port // $p.webui_port // 4071),
             token: ($w.token // $p.webui_token // ""),
             loginRate: ($w.loginRate // $p.login_rate // 3)
@@ -427,7 +428,7 @@ napcat_apply_webui() {
     prefs="$(napcat_json_or "$prefs" "")"
     [ -z "$prefs" ] && { NAPCAT_LAST_ERR="无法加载 napcat_prefs"; return 1; }
 
-    host="$(echo "$prefs" | jq -r '.webui_host // "0.0.0.0"')"
+    host="$(echo "$prefs" | jq -r '.webui_host // "127.0.0.1"')"
     port="$(napcat_coerce_port "$(echo "$prefs" | jq -r '.webui_port // 4071')" "4071")"
     rate="$(napcat_coerce_port "$(echo "$prefs" | jq -r '.login_rate // 3')" "3")"
     disable_pty="$(echo "$prefs" | jq -r '.disable_pty // true')"
@@ -604,7 +605,7 @@ napcat_status_text() {
     eff="$(napcat_webui_effective)"
     text="══ NapCat 状态 ═=\n\n[ WebUI · 全局共用 ]\n"
     text+="  $(echo "$eff" | jq -r '.host'):$(echo "$eff" | jq -r '.port')"
-    text+="$(echo "$eff" | jq -r 'if .token!="" then " token=已设" else " token=自动" end')\n"
+    text+="$(echo "$eff" | jq -r 'if .token!="" then " token=已设" else " token=未设置" end')\n"
     text+="  loginRate=$(echo "$eff" | jq -r '.loginRate')\n"
     text+="  $(napcat_webui_file)\n"
     text+="\n[ 已注册框架 $(echo "$prefs" | jq '.frameworks|length') 个 ]\n"

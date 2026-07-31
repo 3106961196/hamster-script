@@ -12,14 +12,29 @@ _NapCat_加载配置() {
         # shellcheck source=/dev/null
         source <(sed 's/\r$//' "$dir/tool.conf")
     fi
+    declare -F _工具_规范化Deps &>/dev/null && _工具_规范化Deps
+    if declare -F _工具_解析安装目录 &>/dev/null; then
+        _工具_解析安装目录 "napcat"
+    elif [[ -z "${TOOL_INSTALL_DIR:-}" ]]; then
+        local work=""
+        declare -F 获取工作目录 &>/dev/null && work="$(获取工作目录 2>/dev/null || true)"
+        TOOL_INSTALL_DIR="${work:-/root/cs}/${TOOL_INSTALL_SUBDIR:-NapCat}"
+    fi
+    QQ_ROOT="${QQ_ROOT:-/opt/QQ}"
+    NAPCAT_LAUNCHER="${NAPCAT_LAUNCHER:-${QQ_ROOT}/resources/app/app_launcher}"
+    QQ_PACKAGE_JSON="${QQ_PACKAGE_JSON:-${QQ_ROOT}/resources/app/package.json}"
+    LOAD_NAPCAT_JS="${LOAD_NAPCAT_JS:-${QQ_ROOT}/resources/app/loadNapCat.js}"
+    QQ_BIN="${QQ_BIN:-${QQ_ROOT}/qq}"
+    CONFIG_DIR="${TOOL_INSTALL_DIR}/config"
+    NAPCAT_CONFIG_DIR="$CONFIG_DIR"
+    export QQ_ROOT NAPCAT_LAUNCHER TOOL_INSTALL_DIR CONFIG_DIR NAPCAT_CONFIG_DIR
+    export QQ_PACKAGE_JSON LOAD_NAPCAT_JS QQ_BIN
     # shellcheck source=/dev/null
     source <(sed 's/\r$//' "$dir/security.sh")
     if [[ -z "${NAPCAT_QQ_DIR:-}" ]]; then
         NAPCAT_QQ_DIR="$(napcat_qq_dir)"
     fi
     export NAPCAT_QQ_DIR
-    NAPCAT_CONFIG_DIR="${NAPCAT_CONFIG_DIR:-$CONFIG_DIR}"
-    export NAPCAT_CONFIG_DIR
     if [[ -z "${NAPCAT_PREFS_FILE:-}" ]]; then
         NAPCAT_PREFS_FILE="$(napcat_prefs_path)"
     fi
@@ -70,9 +85,16 @@ NapCat_QQ匹配() {
     echo '[q]q --no-sandbox'
 }
 
+# 精确匹配 -q <QQ>，避免 -q 123 误伤 -q 12345
+NapCat_QQ进程模式() {
+    local qq_num="$1"
+    printf '%s -q %s( |$)' "$(NapCat_QQ匹配)" "$qq_num"
+}
+
 NapCat_QQ是否运行() {
     local qq_num="$1"
-    pgrep -f "$(NapCat_QQ匹配) -q ${qq_num}" >/dev/null 2>&1
+    [[ -n "$qq_num" ]] || return 1
+    pgrep -f "$(NapCat_QQ进程模式 "$qq_num")" >/dev/null 2>&1
 }
 
 NapCat_是否运行中() {
@@ -84,7 +106,10 @@ NapCat_获取运行中QQ() {
     while IFS= read -r pid; do
         [[ -z "$pid" ]] && continue
         cmdline="$(tr '\0' ' ' < "/proc/$pid/cmdline" 2>/dev/null || true)"
-        [[ "$cmdline" =~ -q[[:space:]]+([0-9]+) ]] && printf '%s\n' "${BASH_REMATCH[1]}"
+        # 取 -q 后完整账号，避免短号截断
+        if [[ "$cmdline" =~ -q[[:space:]]+([0-9]+) ]]; then
+            printf '%s\n' "${BASH_REMATCH[1]}"
+        fi
     done < <(pgrep -f "$(NapCat_QQ匹配)" 2>/dev/null) | sort -u
 }
 
@@ -119,7 +144,7 @@ NapCat_获取QQ列表() {
     shopt -s nullglob
     for qf in "${qq_dir}"/qq_*.json; do
         basename "$qf" | sed 's/^qq_//;s/\.json$//'
-    done
+    done | sort -n
     shopt -u nullglob
 }
 
@@ -149,7 +174,7 @@ NapCat_启动QQ() {
     fi
 
     if NapCat_QQ是否运行 "$qq_num"; then
-        echo "QQ $qq_num 已在运行。先停止：nt 菜单「停止 QQ」，或 pkill -f 'qq --no-sandbox -q $qq_num'" >&2
+        echo "QQ $qq_num 已在运行。先停止：nt 菜单「停止 QQ」" >&2
         return 1
     fi
 
@@ -182,13 +207,14 @@ NapCat_启动QQ() {
 
 NapCat_停止QQ() {
     local qq_num="$1"
+    [[ -n "$qq_num" ]] || return 1
     if ! NapCat_QQ是否运行 "$qq_num"; then
         return 0
     fi
-    pkill -f "$(NapCat_QQ匹配) -q ${qq_num}" 2>/dev/null
+    pkill -f "$(NapCat_QQ进程模式 "$qq_num")" 2>/dev/null
     sleep 2
     if NapCat_QQ是否运行 "$qq_num"; then
-        pkill -9 -f "$(NapCat_QQ匹配) -q ${qq_num}" 2>/dev/null
+        pkill -9 -f "$(NapCat_QQ进程模式 "$qq_num")" 2>/dev/null
         sleep 1
     fi
     ! NapCat_QQ是否运行 "$qq_num"
@@ -204,10 +230,29 @@ NapCat_停止全部() {
 NapCat_移除QQ() {
     local qq_num="$1"
     _NapCat_加载配置
-    NapCat_停止QQ "$qq_num" 2>/dev/null || true
+    [[ -n "$qq_num" ]] || {
+        NAPCAT_LAST_ERR="QQ 号为空"
+        return 1
+    }
+    if ! [[ "$qq_num" =~ ^[0-9]{5,15}$ ]]; then
+        NAPCAT_LAST_ERR="QQ 号无效: $qq_num"
+        return 1
+    fi
+
+    if NapCat_QQ是否运行 "$qq_num"; then
+        NapCat_停止QQ "$qq_num" 2>/dev/null || true
+        if NapCat_QQ是否运行 "$qq_num"; then
+            NAPCAT_LAST_ERR="无法停止 QQ ${qq_num}，请先手动停止再删除"
+            return 1
+        fi
+    fi
+
     rm -f "$(NapCat_QQ配置文件 "$qq_num")"
-    rm -f "${CONFIG_DIR}/napcat_${qq_num}.json"
-    rm -f "${CONFIG_DIR}/onebot11_${qq_num}.json"
+    rm -f "${CONFIG_DIR}/napcat_${qq_num}.json" \
+        "${CONFIG_DIR}/onebot11_${qq_num}.json" \
+        "${NAPCAT_CONFIG_DIR}/napcat_${qq_num}.json" \
+        "${NAPCAT_CONFIG_DIR}/onebot11_${qq_num}.json"
+    return 0
 }
 
 NapCat_备份QQ配置() {
@@ -487,19 +532,19 @@ NapCat_安装Shell() {
         installed=$(jq -r '.version' "${TOOL_INSTALL_DIR}/package.json")
         case "$(NapCat_比较版本 "$installed" "$target_ver")" in
             older) ;;
-            *) 日志信息 "NapCat 已是最新: v${installed}"; return 0 ;;
+            *) 日志信息 "NapCat 已是最新: v${installed}"; NapCat_注入QQ || return 1; return 0 ;;
         esac
     fi
 
-    for dir in /opt/QQ /opt/QQ/resources /opt/QQ/resources/app; do
+    for dir in "${QQ_ROOT}" "${QQ_ROOT}/resources" "${QQ_ROOT}/resources/app"; do
         [[ -d "$dir" ]] || { 日志错误 "QQ 未正确安装，缺少 $dir"; return 1; }
     done
 
-    mkdir -p "${NAPCAT_LAUNCHER}" "${TOOL_INSTALL_DIR}"
+    mkdir -p "$(dirname "$LOAD_NAPCAT_JS")" "${TOOL_INSTALL_DIR}/config"
     cp -rf "${work_dir}/NapCat/"* "${TOOL_INSTALL_DIR}/" || return 1
     chmod -R 777 "${TOOL_INSTALL_DIR}/"
     NapCat_注入QQ || return 1
-    日志成功 "NapCat 已注入 ${TOOL_INSTALL_DIR}"
+    日志成功 "NapCat 已安装到 ${TOOL_INSTALL_DIR}"
 }
 
 NapCat_执行安装() {
@@ -523,7 +568,9 @@ NapCat_执行安装() {
     fi
 
     日志成功 "NapCat 安装完成"
-    日志信息 "WEBUI: $(napcat_webui_file) （默认 http://<IP>:4071/webui）"
+    日志信息 "NapCat: ${TOOL_INSTALL_DIR}"
+    日志信息 "LinuxQQ: ${QQ_ROOT}"
+    日志信息 "WEBUI: $(napcat_webui_file) （默认 http://127.0.0.1:4071/webui）"
     日志信息 "QQ 绑定: $(napcat_qq_dir)/qq_<QQ>.json"
     日志信息 "启动: nt <QQ号>   管理: nt"
     return 0
