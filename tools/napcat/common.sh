@@ -359,9 +359,80 @@ NapCat_安装LinuxQQ() {
     fi
 }
 
+# 拉取 GitHub API（国内自动走加速代理）
+_NapCat_拉取GitHubAPI() {
+    local url="$1" body proxy=""
+    body=$(curl -fsSL --connect-timeout 10 --max-time 30 -H "User-Agent: hamster-napcat" "$url" 2>/dev/null) || true
+    [[ -n "$body" ]] && { printf '%s' "$body"; return 0; }
+    if type _挑选GitHub代理 &>/dev/null; then
+        proxy="$(_挑选GitHub代理 2>/dev/null)" || true
+    fi
+    if [[ -n "$proxy" && "$proxy" != "https://gitclone.com/github.com" ]]; then
+        body=$(curl -fsSL --connect-timeout 10 --max-time 30 -H "User-Agent: hamster-napcat" \
+            "$(_代理化GitHub地址 "$proxy" "$url")" 2>/dev/null) || true
+        [[ -n "$body" ]] && { printf '%s' "$body"; return 0; }
+    fi
+    return 1
+}
+
+# 按 NapCat 最低版本从 zydou/QQ-Linux 解析可用包（腾讯 CDN 旧包已 404）
+# 优先同主版本 X.Y.Z，否则取更新的发行版；结果写入全局 napcat_qq_url
+NapCat_解析LinuxQQ下载地址() {
+    local ver="$1" pm="$2" arch="$3"
+    local required_base selected_tag tag tag_base pkg_ext json
+    local -a tags=()
+
+    napcat_qq_url=""
+    required_base="${ver%%-*}"
+    case "$pm" in
+        apt-get) pkg_ext="deb" ;;
+        dnf|yum) pkg_ext="rpm" ;;
+        *) return 1 ;;
+    esac
+    case "$arch" in
+        amd64|arm64) ;;
+        *) return 1 ;;
+    esac
+
+    日志信息 "正在从镜像源解析 LinuxQQ 版本（最低 ${ver}）..."
+    json="$(_NapCat_拉取GitHubAPI "https://api.github.com/repos/zydou/QQ-Linux/releases?per_page=50")" || {
+        日志错误 "无法获取 QQ 镜像版本列表"
+        return 1
+    }
+
+    mapfile -t tags < <(printf '%s' "$json" | jq -r '.[].tag_name | select(test("^[0-9]+\\.[0-9]+\\.[0-9]+-[0-9]+$"))')
+    [[ ${#tags[@]} -eq 0 ]] && { 日志错误 "镜像源未返回有效版本标签"; return 1; }
+
+    for tag in "${tags[@]}"; do
+        tag_base="${tag%%-*}"
+        if [[ "$tag_base" == "$required_base" ]]; then
+            selected_tag="$tag"
+            break
+        fi
+    done
+
+    if [[ -z "${selected_tag:-}" ]]; then
+        for tag in "${tags[@]}"; do
+            tag_base="${tag%%-*}"
+            case "$(NapCat_比较版本 "$tag_base" "$required_base")" in
+                equal|newer)
+                    selected_tag="$tag"
+                    break
+                    ;;
+            esac
+        done
+    fi
+
+    [[ -z "${selected_tag:-}" ]] && { 日志错误 "未找到满足最低版本 ${required_base} 的镜像包"; return 1; }
+
+    日志信息 "已选择镜像版本: ${selected_tag}"
+    napcat_qq_url="https://github.com/zydou/QQ-Linux/releases/download/${selected_tag}/QQ-${selected_tag}-${arch}.${pkg_ext}"
+}
+
 NapCat_安装LinuxQQ包() {
     local work_dir="$1" ver="$2" hash="$3" build="$4" pm="$5" arch="$6"
-    local base url pkg_file script_dir="${TOOL_SCRIPT_DIR:-$(dirname "${BASH_SOURCE[0]}")}"
+    local url pkg_file installed installed_build
+    local script_dir="${TOOL_SCRIPT_DIR:-$(dirname "${BASH_SOURCE[0]}")}"
 
     日志信息 "卸载旧版 LinuxQQ（如有）..."
     if [[ "$pm" == apt-get ]]; then
@@ -370,31 +441,37 @@ NapCat_安装LinuxQQ包() {
         rpm -e linuxqq 2>/dev/null || true
     fi
 
-    base="https://dldir1.qq.com/qqfile/qq/QQNT/${hash}/linuxqq_${ver}"
-    if [[ "$arch" == amd64 ]]; then
-        [[ "$pm" == apt-get ]] && url="${base}_amd64.deb" || url="${base}_x86_64.rpm"
+    if [[ "$pm" == apt-get ]]; then
+        pkg_file="${script_dir}/QQ.deb"
     else
-        [[ "$pm" == apt-get ]] && url="${base}_arm64.deb" || url="${base}_aarch64.rpm"
+        pkg_file="${script_dir}/QQ.rpm"
+    fi
+
+    if [[ ! -f "$pkg_file" ]]; then
+        NapCat_解析LinuxQQ下载地址 "$ver" "$pm" "$arch" || return 1
+        url="$napcat_qq_url"
+        日志信息 "QQ 下载: ${url}"
+        日志信息 "下载 LinuxQQ（包较大，请耐心等待）..."
+        网络_下载 "$url" "$pkg_file" 3 || return 1
+    else
+        日志信息 "使用本地 QQ 安装包: ${pkg_file}"
     fi
 
     if [[ "$pm" == apt-get ]]; then
-        pkg_file="${script_dir}/QQ.deb"
-        日志信息 "QQ 下载: ${url}"
-        日志信息 "下载 LinuxQQ ${ver}（deb 较大，请耐心等待）..."
-        [[ -f "$pkg_file" ]] || 网络_下载 "$url" "$pkg_file" 3 || return 1
         日志信息 "安装 LinuxQQ deb 包..."
         apt-get install -f -y "$pkg_file" || return 1
         apt-get install -y libnss3 libgbm1 2>/dev/null || true
         apt-get install -y libasound2 2>/dev/null || apt-get install -y libasound2t64 2>/dev/null || return 1
         rm -f "$pkg_file"
+        installed=$(包管理_获取版本 linuxqq 2>/dev/null || echo "$ver")
     else
-        pkg_file="${script_dir}/QQ.rpm"
-        [[ -f "$pkg_file" ]] || 网络_下载 "$url" "$pkg_file" 3 || return 1
         dnf localinstall -y "$pkg_file" || return 1
         rm -f "$pkg_file"
+        installed=$(包管理_获取版本 linuxqq 2>/dev/null || echo "$ver")
     fi
+    installed_build=${installed##*-}
     NapCat_链接QQ命令
-    NapCat_更新QQ用户配置 "$ver" "$build"
+    NapCat_更新QQ用户配置 "$installed" "$installed_build"
     日志成功 "LinuxQQ 安装完成"
 }
 
