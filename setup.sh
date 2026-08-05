@@ -24,35 +24,36 @@ HAMSTER_DETECT_METHOD=""
     return 1
 }
 
-网络_检测区域() {
+# 与 lib/region.sh 一致：输出 region|method
+_网络_区域详情() {
     local json country
     case "${HAMSTER_REGION:-${XRK_REGION:-}}" in
-        cn|overseas)
-            HAMSTER_DETECT_METHOD="override"
-            printf '%s\n' "${HAMSTER_REGION:-$XRK_REGION}"
-            return 0
-            ;;
+        cn|overseas) printf '%s|override\n' "${HAMSTER_REGION:-$XRK_REGION}"; return 0 ;;
     esac
     if command -v curl &>/dev/null; then
         json=$(curl -s --connect-timeout 3 --max-time 5 "http://ip-api.com/json" 2>/dev/null || true)
         country=$(printf '%s' "$json" | grep -oE '"countryCode":"[^"]*"' | cut -d'"' -f4)
         if [[ -n "$country" ]]; then
-            HAMSTER_DETECT_METHOD="ip"
-            [[ "$country" == "CN" ]] && { echo cn; return 0; }
-            echo overseas
+            [[ "$country" == "CN" ]] && { echo "cn|ip"; return 0; }
+            echo "overseas|ip"
             return 0
         fi
         case "$json" in
-            *'"country":"China"'*) HAMSTER_DETECT_METHOD="ip"; echo cn; return 0 ;;
+            *'"country":"China"'*) echo "cn|ip"; return 0 ;;
         esac
     fi
     if 系统_是否国内时区; then
-        HAMSTER_DETECT_METHOD="timezone"
-        echo cn
+        echo "cn|timezone"
         return 0
     fi
-    HAMSTER_DETECT_METHOD="default"
-    echo overseas
+    echo "overseas|default"
+}
+
+网络_检测区域() {
+    local detail
+    detail=$(_网络_区域详情)
+    HAMSTER_DETECT_METHOD="${detail#*|}"
+    printf '%s\n' "${detail%%|*}"
 }
 
 是否国内区域() { [[ "$(网络_检测区域)" == "cn" ]]; }
@@ -96,7 +97,7 @@ _仓库根路径() {
 }
 
 _拉取仓库() {
-    local cand url branch branch_now
+    local cand url branch branch_now detail region method
     # 重建安装目录前离开该路径，避免 getcwd / No such file or directory
     if ! { cd . && [[ -d . ]]; } 2>/dev/null; then
         cd / || cd "$HOME" || true
@@ -122,10 +123,13 @@ _拉取仓库() {
 
     rm -rf "$INSTALL_DIR"
 
-    if 是否国内区域; then
-        echo "[setup] 国内环境（${HAMSTER_DETECT_METHOD}），优先 Gitee…" >&2
+    detail=$(_网络_区域详情)
+    region="${detail%%|*}"
+    method="${detail#*|}"
+    if [[ "$region" == "cn" ]]; then
+        echo "[setup] 国内环境（${method}），优先 Gitee…" >&2
     else
-        echo "[setup] 海外环境（${HAMSTER_DETECT_METHOD}），优先 GitHub…" >&2
+        echo "[setup] 海外环境（${method}），优先 GitHub…" >&2
     fi
     [[ -n "${REPO_URL:-}" ]] && echo "[setup] 使用指定仓库: $REPO_URL" >&2
 
