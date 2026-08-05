@@ -294,7 +294,66 @@ NapCat_卸载文件() {
     for qq in $(NapCat_获取QQ列表); do
         rm -f "${CONFIG_DIR}/napcat_${qq}.json"
         rm -f "${CONFIG_DIR}/onebot11_${qq}.json"
+        rm -f "${NAPCAT_CONFIG_DIR}/napcat_${qq}.json"
+        rm -f "${NAPCAT_CONFIG_DIR}/onebot11_${qq}.json"
     done
+}
+
+# 仅卸 LinuxQQ 客户端（保留 NapCat 目录与 QQ 绑定）
+NapCat_卸载LinuxQQ() {
+    _NapCat_加载配置
+    local pm
+    NapCat_停止全部
+    NapCat_恢复QQ配置
+    rm -f "$LOAD_NAPCAT_JS" 2>/dev/null || true
+    pm=$(包管理_检测AptDnf 2>/dev/null || true)
+    if [[ "$pm" == apt-get ]]; then
+        apt-get remove -y linuxqq 2>/dev/null || true
+    elif [[ "$pm" == dnf ]]; then
+        rpm -e linuxqq 2>/dev/null || true
+    fi
+    日志成功 "LinuxQQ 已卸载（NapCat 目录与账号绑定仍保留）"
+}
+
+# 仅更新/重装 NapCat Shell（force=y 强制覆盖）
+NapCat_执行仅Shell() {
+    local force="${1:-n}" work_dir
+    [[ $EUID -ne 0 ]] && { 日志错误 "需要 root 权限"; return 1; }
+    _NapCat_加载配置
+    work_dir=$(mktemp -d) || { 日志错误 "无法创建临时目录"; return 1; }
+    if ! NapCat_下载并解压包 "$work_dir"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    if ! NapCat_安装Shell "$work_dir" "$force"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    rm -rf "$work_dir"
+    type 安装_后处理 &>/dev/null && 安装_后处理 "$PROJECT_ROOT" 2>/dev/null || true
+    日志成功 "NapCat Shell 完成 → ${TOOL_INSTALL_DIR}"
+}
+
+# 仅更新/重装 LinuxQQ（force=y 强制；auto_force=y 版本过旧才升）
+NapCat_执行仅LinuxQQ() {
+    local force="${1:-n}" auto_force="${2:-y}" work_dir
+    [[ $EUID -ne 0 ]] && { 日志错误 "需要 root 权限"; return 1; }
+    _NapCat_加载配置
+    work_dir=$(mktemp -d) || { 日志错误 "无法创建临时目录"; return 1; }
+    if ! NapCat_下载并解压包 "$work_dir"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    if ! NapCat_安装LinuxQQ "$work_dir" "$force" "$auto_force"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    rm -rf "$work_dir"
+    NapCat_链接QQ命令 2>/dev/null || true
+    if NapCat_是否已安装; then
+        NapCat_注入QQ || return 1
+    fi
+    日志成功 "LinuxQQ 完成 → ${QQ_ROOT}"
 }
 
 # ─── 安装流程（install.sh 调用） ─────────────────────────────
