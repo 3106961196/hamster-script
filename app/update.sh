@@ -1,9 +1,9 @@
 #!/bin/bash
 
 # 三平台镜像（更新时按可达性自动选用；国内优先 Gitee/GitCode）
-_更新_GITHUB_URL="https://github.com/3106961196/hamster-script.git"
-_更新_GITEE_URL="https://gitee.com/duac/hamster-script.git"
-_更新_GITCODE_URL="https://gitcode.com/duac/hamster-script.git"
+_UPDATE_GITHUB_URL="https://github.com/3106961196/hamster-script.git"
+_UPDATE_GITEE_URL="https://gitee.com/duac/hamster-script.git"
+_UPDATE_GITCODE_URL="https://gitcode.com/duac/hamster-script.git"
 
 # ─── 内部辅助函数 ─────────────────────────────────────────
 
@@ -27,9 +27,9 @@ _更新_注册镜像远程() {
     cd "$PROJECT_ROOT" || return 1
     local name url
     local -a pairs=(
-        "github|${_更新_GITHUB_URL}"
-        "gitee|${_更新_GITEE_URL}"
-        "gitcode|${_更新_GITCODE_URL}"
+        "github|${_UPDATE_GITHUB_URL}"
+        "gitee|${_UPDATE_GITEE_URL}"
+        "gitcode|${_UPDATE_GITCODE_URL}"
     )
     for pair in "${pairs[@]}"; do
         name="${pair%%|*}"

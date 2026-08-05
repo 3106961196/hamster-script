@@ -1,17 +1,10 @@
 #!/bin/bash
 
-REPO_URL="${REPO_URL:-https://github.com/3106961196/hamster-script.git}"
-REPO_BRANCH="${REPO_BRANCH:-main}"
+# 主仓库 Gitee。未设 REPO_URL 时按时区自动选镜像；显式传入 REPO_URL[/REPO_BRANCH] 则只用指定源。
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
-
-# GitHub 代理列表（国内加速）
-_GITHUB_PROXIES=(
-    "https://gh-proxy.com"
-    "https://ghfast.top"
-    "https://mirror.ghproxy.com"
-    "https://ghp.ci"
-    "https://gitclone.com/github.com"
-)
+_SETUP_GITEE_URL="https://gitee.com/duac/hamster-script.git"
+_SETUP_GITCODE_URL="https://gitcode.com/duac/hamster-script.git"
+_SETUP_GITHUB_URL="https://github.com/3106961196/hamster-script.git"
 
 # 国内时区白名单（与 lib/github.sh 对齐；禁止用 *"Asia"*，避免东京/新加坡等误判）
 _国内时区白名单匹配() {
@@ -23,41 +16,44 @@ _国内时区白名单匹配() {
     return 1
 }
 
-# 检测是否国内（时区判断，不依赖网络；用于 GitHub 代理克隆）
+# 检测是否国内（时区判断，不依赖网络；显式 TZ 优先，便于覆盖）
 _是否国内() {
     local tz="${TZ:-}"
-    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || echo "")
+    if [[ -n "$tz" ]]; then
+        _国内时区白名单匹配 "$tz"
+        return $?
+    fi
+    tz=$(cat /etc/timezone 2>/dev/null || echo "")
     _国内时区白名单匹配 "$tz" && return 0
     [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
         | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
 }
 
-# 代理化 GitHub URL
-_代理化GitHub() {
-    local proxy="$1" url="$2"
-    case "$proxy" in
-        https://gitclone.com/github.com)
-            echo "${proxy}/${url#https://github.com/}"
-            ;;
-        *)
-            echo "${proxy}/${url}"
-            ;;
+_仓库默认分支() {
+    case "$1" in
+        *gitee.com*) echo master ;;
+        *) echo main ;;
     esac
 }
 
-# 尝试用代理克隆
-_代理克隆() {
-    local url="$1" dest="$2" proxy
-    echo "[setup] 检测到国内网络，尝试 GitHub 代理..."
-    for proxy in "${_GITHUB_PROXIES[@]}"; do
-        local proxied="$(_代理化GitHub "$proxy" "$url")"
-        echo "[setup] 尝试: ${proxy#https://}"
-        if timeout 60 git clone --depth 1 -b "$REPO_BRANCH" "$proxied" "$dest" 2>/dev/null; then
-            echo "[setup] ✓ 代理克隆成功: ${proxy#https://}"
-            return 0
-        fi
-    done
-    return 1
+# 输出候选：每行 url|branch（指定 REPO_URL 时仅一行）
+_克隆候选列表() {
+    local url branch
+    if [[ -n "${REPO_URL:-}" ]]; then
+        url="$REPO_URL"
+        branch="${REPO_BRANCH:-$(_仓库默认分支 "$url")}"
+        printf '%s|%s\n' "$url" "$branch"
+        return 0
+    fi
+    if _是否国内; then
+        printf '%s|%s\n' "$_SETUP_GITEE_URL" master
+        printf '%s|%s\n' "$_SETUP_GITCODE_URL" main
+        printf '%s|%s\n' "$_SETUP_GITHUB_URL" main
+    else
+        printf '%s|%s\n' "$_SETUP_GITHUB_URL" main
+        printf '%s|%s\n' "$_SETUP_GITCODE_URL" main
+        printf '%s|%s\n' "$_SETUP_GITEE_URL" master
+    fi
 }
 
 _仓库根路径() {
@@ -72,39 +68,55 @@ _仓库根路径() {
 }
 
 _拉取仓库() {
+    local cand url branch branch_now
+    # 重建安装目录前离开该路径，避免 getcwd / No such file or directory
+    if ! { cd . && [[ -d . ]]; } 2>/dev/null; then
+        cd / || cd "$HOME" || true
+    fi
+    case "$(pwd -P 2>/dev/null || true)/" in
+        "${INSTALL_DIR}/"*) cd / || cd "$HOME" || true ;;
+    esac
+
     if [[ -d "$INSTALL_DIR/lib" && -f "$INSTALL_DIR/lib/core.sh" ]]; then
         cd "$INSTALL_DIR" || return 1
         # git reset 会往 stdout 打印 "HEAD is now at ..."，不能污染 $() 捕获的路径
+        branch_now=$(git symbolic-ref -q --short HEAD 2>/dev/null || true)
         git fetch origin >/dev/null 2>&1 || true
-        git reset --hard "origin/${REPO_BRANCH}" >/dev/null 2>&1 || true
+        if [[ -n "$branch_now" ]]; then
+            git reset --hard "origin/${branch_now}" >/dev/null 2>&1 || true
+        else
+            git reset --hard @{u} >/dev/null 2>&1 || true
+        fi
         git clean -f -d >/dev/null 2>/dev/null || true
         echo "$INSTALL_DIR"
         return 0
     fi
 
     rm -rf "$INSTALL_DIR"
-    
-    # 国内环境优先使用代理
+
     if _是否国内; then
-        echo "[setup] 检测到国内环境，使用 GitHub 代理加速..."
-        if _代理克隆 "$REPO_URL" "$INSTALL_DIR"; then
+        echo "[setup] 国内环境，优先 Gitee…" >&2
+    else
+        echo "[setup] 海外环境，优先 GitHub…" >&2
+    fi
+    [[ -n "${REPO_URL:-}" ]] && echo "[setup] 使用指定仓库: $REPO_URL" >&2
+
+    while IFS= read -r cand; do
+        [[ -z "$cand" ]] && continue
+        url="${cand%%|*}"
+        branch="${cand#*|}"
+        echo "[setup] 尝试克隆: $url ($branch)" >&2
+        if timeout 120 git clone --depth 1 -b "$branch" "$url" "$INSTALL_DIR" 2>/dev/null; then
+            echo "[setup] ✓ 克隆成功: $url" >&2
             echo "$INSTALL_DIR"
             return 0
         fi
-        echo "[setup] 代理克隆失败，尝试直连 GitHub..."
-    fi
-    
-    # 直连或代理失败后回退
-    if timeout 120 git clone --depth 1 -b "$REPO_BRANCH" "$REPO_URL" "$INSTALL_DIR" 2>&1; then
-        echo "$INSTALL_DIR"
-        return 0
-    fi
-    
-    echo "[setup] ✗ 克隆失败"
-    echo "[setup] 建议："
-    echo "  1. 检查网络连接"
-    echo "  2. 手动设置代理: export https_proxy=http://your-proxy:port"
-    echo "  3. 或手动克隆后运行: git clone $REPO_URL $INSTALL_DIR && cd $INSTALL_DIR && sudo ./setup.sh"
+        rm -rf "$INSTALL_DIR"
+    done < <(_克隆候选列表)
+
+    echo "[setup] ✗ 克隆失败（已按区域尝试可用镜像）" >&2
+    echo "[setup] 建议：检查网络，或指定仓库：" >&2
+    echo "  REPO_URL=https://gitee.com/duac/hamster-script.git bash <(curl -fsSL https://gitee.com/duac/hamster-script/raw/master/setup.sh)" >&2
     return 1
 }
 
@@ -235,6 +247,15 @@ EOF
 
     [[ $EUID -ne 0 ]] && { echo "请使用 root 运行 setup.sh"; exit 1; }
 
+    # 进程替换 / 目录被删时 cwd 会失效；先落到安全目录
+    if ! { cd . && [[ -d . ]]; } 2>/dev/null; then
+        cd / 2>/dev/null || cd "$HOME" 2>/dev/null || true
+    fi
+    # 避免在即将重建的安装目录内执行（rm -rf 后 cwd 失效）
+    case "$(pwd -P 2>/dev/null || true)/" in
+        "${INSTALL_DIR}/"*) cd / || cd "$HOME" || true ;;
+    esac
+
     repo_root="$(_仓库根路径)"
     if [[ -z "$repo_root" ]]; then
         repo_root="$(_拉取仓库)" || { echo "拉取仓库失败"; exit 1; }
@@ -246,6 +267,7 @@ EOF
     fi
 
     export PROJECT_ROOT="$repo_root" HAMSTER_ROOT="$repo_root"
+    cd "$repo_root" 2>/dev/null || cd / || true
 
     # shellcheck source=/dev/null
     source "$repo_root/lib/core.sh"
@@ -263,9 +285,10 @@ EOF
     echo "安装完成。"
     echo ""
 
-    # 自动进入 tmux 桌面
+    # 自动进入 tmux 桌面（先 cd 到有效目录，避免 getcwd 报错）
     if command -v hamster-tmux &>/dev/null; then
         echo "正在进入 tmux 桌面..."
+        cd "$repo_root" 2>/dev/null || cd / || cd "$HOME" || true
         exec hamster-tmux
     else
         echo "运行: cs"

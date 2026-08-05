@@ -43,6 +43,10 @@ _Tmux确保会话() {
 
 _Tmux进入() {
     Tmux_确保UTF8
+    # 安装目录被重建后，原 shell 的 cwd 可能已失效
+    if ! { cd . && [[ -d . ]]; } 2>/dev/null; then
+        cd "${WORK_DIR:-/}" 2>/dev/null || cd / || cd "$HOME" || true
+    fi
     command -v tmux &>/dev/null || {
         echo "[hamster-tmux] 未安装，请运行 hamster-tmux --setup" >&2
         exit 1
@@ -62,6 +66,7 @@ _Tmux进入() {
     fi
 
     echo "[hamster-tmux] 进入 $SESSION_NAME …"
+    cd "${WORK_DIR:-$HOME}" 2>/dev/null || cd / || true
     exec tmux attach-session -t "$SESSION_NAME"
 }
 
