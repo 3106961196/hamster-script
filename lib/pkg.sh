@@ -603,9 +603,14 @@ _包管理_安装重试() {
     fi
 
     if [[ "$package" == "linuxqq" ]]; then
+        # dpkg 可能带 epoch：1:3.2.19-39038 → 3.2.19-39038
         v=$(dpkg -l linuxqq 2>/dev/null | awk '/^ii/ {print $3; exit}')
-        [[ -n "$v" ]] && { echo "$v"; return 0; }
-        v=$(rpm -q linuxqq 2>/dev/null | awk -F- '{print $2; exit}')
+        if [[ -n "$v" ]]; then
+            echo "${v##*:}"
+            return 0
+        fi
+        # rpm: linuxqq-3.2.19-39038.x86_64 → 3.2.19-39038
+        v=$(rpm -q linuxqq 2>/dev/null | sed -n 's/^linuxqq-\([0-9][^-]*-[0-9][^.]*\).*/\1/p')
         [[ -n "$v" ]] && { echo "$v"; return 0; }
         echo "未知"
         return 0

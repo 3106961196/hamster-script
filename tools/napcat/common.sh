@@ -334,9 +334,10 @@ NapCat_安装系统依赖() {
     fi
 }
 
+# 解压到指定临时目录（勿用 stdout 回传路径，避免日志污染 $()）
 NapCat_下载并解压包() {
     _NapCat_加载配置
-    local work_dir="${1:-$(mktemp -d)}"
+    local work_dir="${1:?NapCat_下载并解压包 需要 work_dir}"
     local zip_file="${work_dir}/NapCat.Shell.zip"
     local url="${NAPCAT_ZIP_URL}"
 
@@ -350,17 +351,47 @@ NapCat_下载并解压包() {
     fi
     unzip -t "$zip_file" >/dev/null 2>&1 || { 日志错误 "安装包校验失败"; return 1; }
     unzip -q -o -d "${work_dir}/NapCat" "$zip_file" || { 日志错误 "解压失败"; return 1; }
-    echo "$work_dir"
+    return 0
 }
 
+# 支持 4.7.43 / 3.2.19-39038 / 1:3.2.19-39038（先比 X.Y.Z，再比 build）
 NapCat_比较版本() {
     local a="$1" b="$2"
-    工具_版本比较 "$a" "$b"
-    case $? in
-        0) echo equal ;;
-        1) echo newer ;;
-        2) echo older ;;
+    local a_base b_base a_build=0 b_build=0 rc
+
+    a="${a##*:}"
+    b="${b##*:}"
+    a="${a//[$'\r\n']/}"
+    b="${b//[$'\r\n']/}"
+    [[ -n "$a" && -n "$b" ]] || { echo older; return 0; }
+
+    a_base="${a%%-*}"
+    b_base="${b%%-*}"
+    if [[ "$a" == *-* ]]; then
+        a_build="${a#*-}"
+        a_build="${a_build%%[^0-9]*}"
+        [[ "$a_build" =~ ^[0-9]+$ ]] || a_build=0
+    fi
+    if [[ "$b" == *-* ]]; then
+        b_build="${b#*-}"
+        b_build="${b_build%%[^0-9]*}"
+        [[ "$b_build" =~ ^[0-9]+$ ]] || b_build=0
+    fi
+
+    工具_版本比较 "$a_base" "$b_base"
+    rc=$?
+    case $rc in
+        1) echo newer; return 0 ;;
+        2) echo older; return 0 ;;
     esac
+
+    if (( a_build > b_build )); then
+        echo newer
+    elif (( a_build < b_build )); then
+        echo older
+    else
+        echo equal
+    fi
 }
 
 NapCat_更新QQ用户配置() {
@@ -378,29 +409,45 @@ NapCat_更新QQ用户配置() {
 NapCat_安装LinuxQQ() {
     _NapCat_加载配置
     local work_dir="$1" force="${2:-n}" auto_force="${3:-y}"
-    local pm arch ver hash build base url pkg_file
+    local pm arch ver hash build installed
 
     ver=$(jq -r '.linuxVersion' "${work_dir}/NapCat/qqnt.json")
     hash=$(jq -r '.linuxVerHash' "${work_dir}/NapCat/qqnt.json")
+    ver="${ver##*:}"
     build=${ver##*-}
     [[ -z "$ver" || "$ver" == null || -z "$hash" || "$hash" == null ]] && { 日志错误 "无法读取 QQ 目标版本"; return 1; }
 
     pm=$(包管理_检测AptDnf) || return 1
     arch=$(NapCat_系统架构) || return 1
-    [[ "$auto_force" == y ]] && force=y
-    [[ "$force" == y ]] && { NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"; return; }
 
-    if 包管理_LinuxQQ已安装; then
-        local installed
-        installed=$(包管理_获取版本 linuxqq 2>/dev/null || true)
-        if [[ "$(NapCat_比较版本 "$installed" "$ver")" == older ]]; then
+    # --force：始终重装；--auto-force（默认）：仅版本过旧时重装；--no-auto-force：过旧则跳过
+    if [[ "$force" == y ]]; then
+        NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"
+        return
+    fi
+
+    if ! 包管理_LinuxQQ已安装; then
+        NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"
+        return
+    fi
+
+    installed=$(包管理_获取版本 linuxqq 2>/dev/null || true)
+    if [[ -z "$installed" || "$installed" == "未知" ]]; then
+        NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"
+        return
+    fi
+
+    if [[ "$(NapCat_比较版本 "$installed" "$ver")" == older ]]; then
+        if [[ "$auto_force" == y ]]; then
+            日志信息 "LinuxQQ 版本过旧: $installed < $ver，自动重装"
             NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"
         else
-            日志信息 "LinuxQQ 版本已满足: $installed"
-            NapCat_更新QQ用户配置 "$ver" "$build"
+            日志警告 "LinuxQQ 版本过旧: $installed < $ver（已跳过重装；需要升级请加 --force）"
+            NapCat_更新QQ用户配置 "$ver" "$build" || true
         fi
     else
-        NapCat_安装LinuxQQ包 "$work_dir" "$ver" "$hash" "$build" "$pm" "$arch"
+        日志信息 "LinuxQQ 版本已满足: $installed（目标 $ver）"
+        NapCat_更新QQ用户配置 "$ver" "$build"
     fi
 }
 
@@ -476,8 +523,9 @@ NapCat_解析LinuxQQ下载地址() {
 
 NapCat_安装LinuxQQ包() {
     local work_dir="$1" ver="$2" hash="$3" build="$4" pm="$5" arch="$6"
-    local url pkg_file installed installed_build
+    local url pkg_file installed installed_build keep_pkg=0
     local script_dir="${TOOL_SCRIPT_DIR:-$(dirname "${BASH_SOURCE[0]}")}"
+    local local_deb="${script_dir}/QQ.deb" local_rpm="${script_dir}/QQ.rpm"
 
     日志信息 "卸载旧版 LinuxQQ（如有）..."
     if [[ "$pm" == apt-get ]]; then
@@ -486,20 +534,31 @@ NapCat_安装LinuxQQ包() {
         rpm -e linuxqq 2>/dev/null || true
     fi
 
+    # 本地包保留复用；在线下载落到 work_dir，装完再删
     if [[ "$pm" == apt-get ]]; then
-        pkg_file="${script_dir}/QQ.deb"
+        if [[ -f "$local_deb" ]]; then
+            pkg_file="$local_deb"
+            keep_pkg=1
+        else
+            pkg_file="${work_dir}/QQ.deb"
+        fi
     else
-        pkg_file="${script_dir}/QQ.rpm"
+        if [[ -f "$local_rpm" ]]; then
+            pkg_file="$local_rpm"
+            keep_pkg=1
+        else
+            pkg_file="${work_dir}/QQ.rpm"
+        fi
     fi
 
-    if [[ ! -f "$pkg_file" ]]; then
+    if [[ "$keep_pkg" -eq 1 ]]; then
+        日志信息 "使用本地 QQ 安装包: ${pkg_file}"
+    else
         NapCat_解析LinuxQQ下载地址 "$ver" "$pm" "$arch" || return 1
         url="$napcat_qq_url"
         日志信息 "QQ 下载: ${url}"
         日志信息 "下载 LinuxQQ（包较大，请耐心等待）..."
         网络_下载 "$url" "$pkg_file" 3 || return 1
-    else
-        日志信息 "使用本地 QQ 安装包: ${pkg_file}"
     fi
 
     if [[ "$pm" == apt-get ]]; then
@@ -507,13 +566,14 @@ NapCat_安装LinuxQQ包() {
         apt-get install -f -y "$pkg_file" || return 1
         apt-get install -y libnss3 libgbm1 2>/dev/null || true
         apt-get install -y libasound2 2>/dev/null || apt-get install -y libasound2t64 2>/dev/null || return 1
-        rm -f "$pkg_file"
-        installed=$(包管理_获取版本 linuxqq 2>/dev/null || echo "$ver")
     else
         dnf localinstall -y "$pkg_file" || return 1
-        rm -f "$pkg_file"
-        installed=$(包管理_获取版本 linuxqq 2>/dev/null || echo "$ver")
     fi
+    [[ "$keep_pkg" -eq 0 ]] && rm -f "$pkg_file"
+
+    installed=$(包管理_获取版本 linuxqq 2>/dev/null || echo "$ver")
+    [[ "$installed" == "未知" ]] && installed="$ver"
+    installed="${installed##*:}"
     installed_build=${installed##*-}
     NapCat_链接QQ命令
     NapCat_更新QQ用户配置 "$installed" "$installed_build"
@@ -553,9 +613,19 @@ NapCat_执行安装() {
     [[ $EUID -ne 0 ]] && { 日志错误 "NapCat 安装需要 root 权限"; return 1; }
 
     NapCat_安装系统依赖 || return 1
-    work_dir=$(NapCat_下载并解压包) || return 1
-    NapCat_安装LinuxQQ "$work_dir" "$force" "$auto_force" || return 1
-    NapCat_安装Shell "$work_dir" "$force" || return 1
+    work_dir=$(mktemp -d) || { 日志错误 "无法创建临时目录"; return 1; }
+    if ! NapCat_下载并解压包 "$work_dir"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    if ! NapCat_安装LinuxQQ "$work_dir" "$force" "$auto_force"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
+    if ! NapCat_安装Shell "$work_dir" "$force"; then
+        rm -rf "$work_dir"
+        return 1
+    fi
     rm -rf "$work_dir"
 
     NapCat_链接QQ命令 2>/dev/null || true

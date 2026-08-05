@@ -12,9 +12,9 @@ _show_help() {
     cat <<'EOF'
 用法: install.sh [选项]
 
-  --force           强制重装 LinuxQQ 与 NapCat
-  --auto-force      版本不匹配时自动重装（默认）
-  --no-auto-force   关闭自动强制重装
+  --force           强制重装 LinuxQQ 与 NapCat（不论当前版本）
+  --auto-force      仅当 LinuxQQ 版本过旧时自动重装（默认）
+  --no-auto-force   版本过旧也不重装 QQ，仅继续装 NapCat
   -h, --help        显示帮助
 EOF
 }
