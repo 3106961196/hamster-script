@@ -1,5 +1,5 @@
 #!/bin/bash
-# GitHub 访问：国内走代理，海外直连（HAMSTER_REGION=cn|overseas 可覆盖）
+# GitHub 访问：国内走代理，海外直连（区域见 lib/region.sh）
 
 _HAMSTER_GITHUB_PROXY_CACHED="${_HAMSTER_GITHUB_PROXY_CACHED:-}"
 
@@ -11,52 +11,6 @@ _GITHUB_PROXIES=(
     "https://ghp.ci"
     "https://gitclone.com/github.com"
 )
-
-_是否国内区域() {
-    case "${HAMSTER_REGION:-${XRK_REGION:-}}" in
-        cn) return 0 ;;
-        overseas) return 1 ;;
-    esac
-    case "${XRK_SOURCE:-}" in
-        3|cn) return 0 ;;
-    esac
-    [[ "$(网络_检测区域 2>/dev/null || echo overseas)" = "cn" ]]
-}
-
-_是否国内时区() {
-    local tz="${TZ:-$(cat /etc/timezone 2>/dev/null)}"
-    case "$tz" in
-        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
-            |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
-    esac
-    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
-        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
-}
-
-网络_检测区域() {
-    local json country
-
-    case "${HAMSTER_REGION:-${XRK_REGION:-}}" in
-        cn|overseas) echo "${HAMSTER_REGION:-$XRK_REGION}"; return 0 ;;
-    esac
-
-    if 命令存在 curl; then
-        json=$(curl -s --connect-timeout 4 --max-time 8 "http://ip-api.com/json" 2>/dev/null || true)
-        country=$(printf '%s' "$json" | grep -oE '"countryCode":"[^"]*"' | cut -d'"' -f4)
-        if [[ -n "$country" ]]; then
-            [[ "$country" = "CN" ]] && { echo "cn"; return 0; }
-            echo "overseas"
-            return 0
-        fi
-        # countryCode 解析失败时，尝试 country 字段
-        case "$json" in
-            *'"country":"China"'*) echo "cn"; return 0 ;;
-        esac
-    fi
-
-    _是否国内时区 && { echo "cn"; return 0; }
-    echo "overseas"
-}
 
 _代理化GitHub地址() {
     local proxy="$1" direct="$2"
@@ -151,7 +105,7 @@ getgh() {
     esac
 
     new_url="$original_url"
-    if _是否国内区域; then
+    if 是否国内区域; then
         proxy="$(_挑选GitHub代理)"
         [[ -n "$proxy" ]] && new_url="$(_代理化GitHub地址 "$proxy" "$original_url")"
     fi
@@ -245,7 +199,7 @@ GitHub_克隆() {
         _HAMSTER_GITHUB_PROXY_CACHED=""
     fi
 
-    if _是否国内区域; then
+    if 是否国内区域; then
         proxy="$(_挑选GitHub代理)"
         if [[ -n "$proxy" ]]; then
             proxied="$(_代理化GitHub地址 "$proxy" "$direct")"
@@ -282,7 +236,7 @@ GitHub_下载候选() {
     direct="$(_GitHub_清理URL "$url")"
     [[ -z "$direct" ]] && return 1
 
-    if _是否国内区域; then
+    if 是否国内区域; then
         proxy="$(_挑选GitHub代理)"
         [[ -n "$proxy" ]] && urls+=("$(_代理化GitHub地址 "$proxy" "$direct")")
         for proxy in "${_GITHUB_PROXIES[@]}"; do

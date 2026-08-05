@@ -12,11 +12,9 @@ _更新_分支() {
 }
 
 _更新_国内优先() {
-    if declare -F _是否国内区域 &>/dev/null; then
-        _是否国内区域 && return 0
-    fi
-    if declare -F _是否国内时区 &>/dev/null; then
-        _是否国内时区 && return 0
+    if declare -F 是否国内区域 &>/dev/null; then
+        是否国内区域 && return 0
+        return 1
     fi
     case "${HAMSTER_REGION:-}" in cn) return 0 ;; esac
     return 1

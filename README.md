@@ -4,7 +4,7 @@ Linux 服务器管理脚本，dialog 菜单界面。
 
 ## 安装
 
-主仓库为 [Gitee](https://gitee.com/duac/hamster-script)。一键安装即可（脚本会按时区自动选 Gitee / GitCode / GitHub；只有显式设置 `REPO_URL` 才固定仓库）：
+主仓库为 [Gitee](https://gitee.com/duac/hamster-script)。一键安装即可（按区域自动选镜像：`HAMSTER_REGION` 覆盖 → IP → 时区；只有显式 `REPO_URL` 才固定仓库）：
 
 ```bash
 cd $HOME   # 不要在 /cs 内执行
@@ -16,7 +16,11 @@ bash <(curl -fsSL https://gitee.com/duac/hamster-script/raw/master/setup.sh)
 ```bash
 REPO_URL=https://github.com/3106961196/hamster-script.git \
   bash <(curl -fsSL https://gitee.com/duac/hamster-script/raw/master/setup.sh)
+
+HAMSTER_REGION=cn bash <(curl -fsSL https://gitee.com/duac/hamster-script/raw/master/setup.sh)
 ```
+
+区域自测：`bash /cs/scripts/region-selftest.sh`（`TZ=` / `HAMSTER_REGION=` 任意机器可验）。
 
 已装过可直接 `cs update`。目录被删后，再跑上面的一键安装即可恢复。
 
@@ -24,7 +28,7 @@ REPO_URL=https://github.com/3106961196/hamster-script.git \
 
 ```bash
 cs              # 主菜单
-cs update       # 更新（按时区试各镜像；全失败会提示检查网络）
+cs update       # 更新（按区域试各镜像；全失败会提示检查网络）
 nt              # NapCat 管理（多 QQ · 多框架 · WebUI）
 nt <QQ>         # 启动已配置 QQ
 nt --sync-onebot <QQ>  # 仅同步 onebot（需先停 QQ）

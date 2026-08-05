@@ -1,33 +1,61 @@
 #!/bin/bash
 
-# 主仓库 Gitee。未设 REPO_URL 时按时区自动选镜像；显式传入 REPO_URL[/REPO_BRANCH] 则只用指定源。
+# 主仓库 Gitee。未设 REPO_URL 时按区域自动选镜像；显式 REPO_URL 才固定。
+# 区域逻辑与 lib/region.sh 一致（clone 前自包含）：覆盖 → IP → 时区
 INSTALL_DIR="${INSTALL_DIR:-/cs}"
 _SETUP_GITEE_URL="https://gitee.com/duac/hamster-script.git"
 _SETUP_GITCODE_URL="https://gitcode.com/duac/hamster-script.git"
 _SETUP_GITHUB_URL="https://github.com/3106961196/hamster-script.git"
+HAMSTER_DETECT_METHOD=""
 
-# 国内时区白名单（与 lib/github.sh 对齐；禁止用 *"Asia"*，避免东京/新加坡等误判）
-_国内时区白名单匹配() {
-    local tz="$1"
-    case "$tz" in
-        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
+系统_检测时区() {
+    local tz="${TZ:-}"
+    [[ -n "$tz" ]] && { printf '%s\n' "$tz"; return 0; }
+    tz=$(timedatectl show -p Timezone --value 2>/dev/null) && [[ -n "$tz" ]] && { printf '%s\n' "$tz"; return 0; }
+    [[ -f /etc/timezone ]] && { cat /etc/timezone; return 0; }
+    readlink -f /etc/localtime 2>/dev/null | sed -n 's|.*/zoneinfo/||p'
+}
+
+系统_是否国内时区() {
+    case "$(系统_检测时区)" in
+        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar|PRC \
         |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
     esac
     return 1
 }
 
-# 检测是否国内（时区判断，不依赖网络；显式 TZ 优先，便于覆盖）
-_是否国内() {
-    local tz="${TZ:-}"
-    if [[ -n "$tz" ]]; then
-        _国内时区白名单匹配 "$tz"
-        return $?
+网络_检测区域() {
+    local json country
+    case "${HAMSTER_REGION:-${XRK_REGION:-}}" in
+        cn|overseas)
+            HAMSTER_DETECT_METHOD="override"
+            printf '%s\n' "${HAMSTER_REGION:-$XRK_REGION}"
+            return 0
+            ;;
+    esac
+    if command -v curl &>/dev/null; then
+        json=$(curl -s --connect-timeout 3 --max-time 5 "http://ip-api.com/json" 2>/dev/null || true)
+        country=$(printf '%s' "$json" | grep -oE '"countryCode":"[^"]*"' | cut -d'"' -f4)
+        if [[ -n "$country" ]]; then
+            HAMSTER_DETECT_METHOD="ip"
+            [[ "$country" == "CN" ]] && { echo cn; return 0; }
+            echo overseas
+            return 0
+        fi
+        case "$json" in
+            *'"country":"China"'*) HAMSTER_DETECT_METHOD="ip"; echo cn; return 0 ;;
+        esac
     fi
-    tz=$(cat /etc/timezone 2>/dev/null || echo "")
-    _国内时区白名单匹配 "$tz" && return 0
-    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
-        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)'
+    if 系统_是否国内时区; then
+        HAMSTER_DETECT_METHOD="timezone"
+        echo cn
+        return 0
+    fi
+    HAMSTER_DETECT_METHOD="default"
+    echo overseas
 }
+
+是否国内区域() { [[ "$(网络_检测区域)" == "cn" ]]; }
 
 _仓库默认分支() {
     case "$1" in
@@ -45,7 +73,7 @@ _克隆候选列表() {
         printf '%s|%s\n' "$url" "$branch"
         return 0
     fi
-    if _是否国内; then
+    if 是否国内区域; then
         printf '%s|%s\n' "$_SETUP_GITEE_URL" master
         printf '%s|%s\n' "$_SETUP_GITCODE_URL" main
         printf '%s|%s\n' "$_SETUP_GITHUB_URL" main
@@ -94,10 +122,10 @@ _拉取仓库() {
 
     rm -rf "$INSTALL_DIR"
 
-    if _是否国内; then
-        echo "[setup] 国内环境，优先 Gitee…" >&2
+    if 是否国内区域; then
+        echo "[setup] 国内环境（${HAMSTER_DETECT_METHOD}），优先 Gitee…" >&2
     else
-        echo "[setup] 海外环境，优先 GitHub…" >&2
+        echo "[setup] 海外环境（${HAMSTER_DETECT_METHOD}），优先 GitHub…" >&2
     fi
     [[ -n "${REPO_URL:-}" ]] && echo "[setup] 使用指定仓库: $REPO_URL" >&2
 
@@ -122,12 +150,9 @@ _拉取仓库() {
 
 _配置时区() {
     local tz
-    tz=$(timedatectl show -p Timezone --value 2>/dev/null || cat /etc/timezone 2>/dev/null || echo "")
-    case "$tz" in
-        Asia/Shanghai|Asia/Chongqing|Asia/Harbin|Asia/Urumqi|Asia/Kashgar \
-        |Asia/Hong_Kong|Asia/Macau|Asia/Taipei) return 0 ;;
-    esac
-    _是否国内服务器 || return 0
+    tz=$(系统_检测时区)
+    系统_是否国内时区 && return 0
+    是否国内区域 || return 0
     echo "[setup] 系统时区为 ${tz:-未知}，设置为 Asia/Shanghai…"
     if timedatectl set-timezone Asia/Shanghai 2>/dev/null; then
         echo "[setup] ✓ 系统时区已设为 Asia/Shanghai"
@@ -142,42 +167,21 @@ _配置时区() {
 
 _安装前引导() {
     local pkg_manager
-    
+
     _配置时区
 
     pkg_manager=$(包管理_获取管理器 2>/dev/null || echo unknown)
     [[ "$pkg_manager" != "apt" ]] && return 0
-    
-    # 自动检测是否在国内服务器
-    if _是否国内服务器; then
+
+    if 是否国内区域; then
         echo ""
-        echo "检测到国内服务器，自动优化 apt 源..."
+        echo "检测到国内服务器（${HAMSTER_DETECT_METHOD}），自动优化 apt 源..."
         if _自动换源_apt; then
             echo "✓ apt 源已优化"
         else
             echo "⚠ 自动换源失败，继续安装..."
         fi
     fi
-}
-
-# 国内才自动换 apt 源：时区白名单 或 IP=CN；不确定则不换
-_是否国内服务器() {
-    local tz="${TZ:-}" country
-
-    [[ -z "$tz" ]] && tz=$(cat /etc/timezone 2>/dev/null || true)
-    [[ -z "$tz" ]] && tz=$(timedatectl show -p Timezone --value 2>/dev/null || true)
-    _国内时区白名单匹配 "$tz" && return 0
-    [[ -L /etc/localtime ]] && readlink /etc/localtime 2>/dev/null \
-        | grep -qE 'Asia/(Shanghai|Chongqing|Harbin|Urumqi|Kashgar|Hong_Kong|Macau|Taipei)' \
-        && return 0
-
-    if command -v curl &>/dev/null; then
-        country=$(curl -fsSL --connect-timeout 3 --max-time 5 https://ipinfo.io/country 2>/dev/null || echo "")
-        country=$(printf '%s' "$country" | tr -d '\r\n[:space:]')
-        [[ "$country" == "CN" ]] && return 0
-    fi
-
-    return 1
 }
 
 _自动换源_apt() {

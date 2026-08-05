@@ -68,7 +68,7 @@ declare -gA CONFIG
 
 # 加载所有库
 加载全部库() {
-    local libs=("log" "config" "ui" "pkg" "chromium" "github" "sys" "service" "firewall" "net" "tool" "bootstrap" "tool_entry")
+    local libs=("log" "config" "ui" "pkg" "chromium" "region" "github" "sys" "service" "firewall" "net" "tool" "bootstrap" "tool_entry")
     for lib in "${libs[@]}"; do
         加载库 "$lib"
     done
