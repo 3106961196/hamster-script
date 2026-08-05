@@ -2,19 +2,19 @@
 
 Linux 服务器管理脚本，dialog 菜单界面。
 
-## 拉取代码
+## 安装
 
-任选其一（浅克隆；**GitHub 为主仓库**）：
+任选其一（**GitHub 为主仓库**）：
 
 ```bash
 # GitHub（主）
-git clone --depth=1 https://github.com/3106961196/hamster-script.git
+bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/setup.sh)
 
 # Gitee
-git clone --depth=1 https://gitee.com/duac/hamster-script.git
+bash <(curl -sL https://gitee.com/duac/hamster-script/raw/main/setup.sh)
 
 # GitCode
-git clone --depth=1 https://gitcode.com/duac/hamster-script.git
+bash <(curl -sL https://gitcode.com/duac/hamster-script/raw/main/setup.sh)
 ```
 
 | 平台 | 仓库地址 |
@@ -22,21 +22,6 @@ git clone --depth=1 https://gitcode.com/duac/hamster-script.git
 | GitHub（主） | https://github.com/3106961196/hamster-script |
 | Gitee | https://gitee.com/duac/hamster-script |
 | GitCode | https://gitcode.com/duac/hamster-script |
-
-## 安装
-
-一键（GitHub raw）：
-
-```bash
-bash <(curl -sL https://github.com/3106961196/hamster-script/raw/main/setup.sh)
-```
-
-或 clone 后本地安装：
-
-```bash
-cd hamster-script
-sudo ./setup.sh
-```
 
 ## 使用
 
