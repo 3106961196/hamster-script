@@ -57,31 +57,42 @@ _更新_远程顺序() {
     printf '%s' "${order[*]}"
 }
 
+# 某远程上尝试的分支名（Gitee 默认 master，其余多为 main）
+_更新_远程分支候选() {
+    local name="$1" local_branch="$2"
+    case "$name" in
+        gitee) printf '%s' "master main ${local_branch}" ;;
+        *) printf '%s' "${local_branch} main master" ;;
+    esac
+}
+
 # 拉取各镜像；成功则选提交时间最新的 tip
 # 输出: ref|source   失败 return 1
 _更新_拉取最佳() {
     cd "$PROJECT_ROOT" || return 1
     _更新_注册镜像远程 || return 1
 
-    local branch name tip ts best_ts=0 best_ref="" best_name="" fetched=0
-    branch="$(_更新_分支)"
+    local local_branch name remote_branch tip ts best_ts=0 best_ref="" best_name="" fetched=0
+    local_branch="$(_更新_分支)"
 
     for name in $(_更新_远程顺序); do
         git remote get-url "$name" >/dev/null 2>&1 || continue
-        if timeout 45 git fetch --depth 1 --prune "$name" \
-            "+refs/heads/${branch}:refs/remotes/${name}/${branch}" >/dev/null 2>&1; then
-            tip="${name}/${branch}"
-            git rev-parse --verify "$tip" >/dev/null 2>&1 || continue
-            fetched=1
-            ts=$(git log -1 --format=%ct "$tip" 2>/dev/null || echo 0)
-            [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
-            # 同时间戳保留先成功的（顺序即优先级）
-            if [[ -z "$best_ref" || "$ts" -gt "$best_ts" ]]; then
-                best_ts=$ts
-                best_ref=$tip
-                best_name=$name
+        for remote_branch in $(_更新_远程分支候选 "$name" "$local_branch"); do
+            if timeout 45 git fetch --depth 1 --prune "$name" \
+                "+refs/heads/${remote_branch}:refs/remotes/${name}/${remote_branch}" >/dev/null 2>&1; then
+                tip="${name}/${remote_branch}"
+                git rev-parse --verify "$tip" >/dev/null 2>&1 || continue
+                fetched=1
+                ts=$(git log -1 --format=%ct "$tip" 2>/dev/null || echo 0)
+                [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
+                if [[ -z "$best_ref" || "$ts" -gt "$best_ts" ]]; then
+                    best_ts=$ts
+                    best_ref=$tip
+                    best_name=$name
+                fi
+                break
             fi
-        fi
+        done
     done
 
     [[ "$fetched" -eq 1 && -n "$best_ref" ]] || return 1
