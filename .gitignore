@@ -42,6 +42,8 @@ log/
 .tmux-home/
 /tmp/mongodb/
 /tmp/mongolog/
+# 脚本侧运行时数据（QQ 绑定、prefs 等；更新 git clean 勿删）
+/data/
 
 # 本地开发杂项（历史 PR 拆分脚本等）
 patches/

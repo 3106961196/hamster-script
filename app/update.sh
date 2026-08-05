@@ -86,8 +86,9 @@ _更新_执行() {
     changes=$(git diff --stat --color=always HEAD "$target" 2>/dev/null)
     diff_summary=$(git diff --numstat HEAD "$target" 2>/dev/null | awk '{added+=$1; removed+=$2} END {printf "+%d / -%d", added, removed}')
 
+    # 仅内容改动算「脏」；安装后处理 chmod +x 的权限位变化忽略
     local dirty_msg=""
-    if ! git diff --quiet 2>/dev/null || ! git diff --cached --quiet 2>/dev/null; then
+    if [[ -n "$(git diff --numstat 2>/dev/null)" || -n "$(git diff --cached --numstat 2>/dev/null)" ]]; then
         dirty_msg="\n\n⚠️ 检测到本地未提交修改，更新将丢失这些改动"
     fi
 

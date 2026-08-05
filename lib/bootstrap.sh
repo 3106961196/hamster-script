@@ -54,6 +54,10 @@ EOF
     安装_同步命令 "$root"
     安装_链接Tmux "$root"
     安装_注册Shell钩子 "$root"
+    # chmod +x 会改权限位；忽略 fileMode，避免「脚本更新」误报本地有修改
+    if [[ -d "${root}/.git" ]]; then
+        git -C "$root" config core.fileMode false 2>/dev/null || true
+    fi
 }
 
 安装_系统目录() {
