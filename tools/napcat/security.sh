@@ -66,29 +66,57 @@ napcat_framework_label() {
     esac
 }
 
-napcat_framework_id_from_root() {
+# 目录名规范化（不含端口）
+napcat_framework_base_id() {
     local root="$1"
     printf '%s' "$(basename "$root" | tr '[:upper:]' '[:lower:]' | tr '_' '-')"
 }
 
-napcat_guess_framework_port() {
-    local root="$1" label port
-    label="$(napcat_framework_label "$root")"
-    case "$label" in
-        XRK-AGT) port=8080 ;;
-        XRK-Yunzai) port=2537 ;;
-        *) port=2537 ;;
-    esac
-    if [ -d "${root}/data/server_bots" ]; then
-        local first
-        first="$(find "${root}/data/server_bots" -maxdepth 1 -mindepth 1 -type d 2>/dev/null \
-            | sed 's#.*/##' | sort -n | head -n1)"
-        [ -n "$first" ] && [[ "$first" =~ ^[0-9]+$ ]] && port="$first"
-    fi
-    printf '%s' "$port"
+# 兼容旧名
+napcat_framework_id_from_root() {
+    napcat_framework_base_id "$1"
 }
 
-# 扫描磁盘上的框架，输出 JSON 数组（不写入文件）
+# 一端口一框架：id = {目录}-{端口}，例如 xrk-agt-8080
+napcat_framework_id() {
+    local root="$1" port="$2"
+    port="$(napcat_coerce_port "$port" "")"
+    [[ "$port" =~ ^[0-9]+$ ]] || { napcat_framework_base_id "$root"; return 0; }
+    printf '%s-%s' "$(napcat_framework_base_id "$root")" "$port"
+}
+
+# 类型缺省端口（仅当扫不到 server_bots/{port} 时用）
+napcat_framework_fallback_port() {
+    case "$(napcat_framework_label "$1")" in
+        XRK-AGT) printf '8080' ;;
+        *) printf '2537' ;;
+    esac
+}
+
+# 扫描 data/server_bots 下数字目录；每个端口独立一行输出
+# 无端口目录时输出一个 fallback，保证手动/旧框架仍可选
+napcat_list_framework_ports() {
+    local root="$1" d name found=0
+    if [ -d "${root}/data/server_bots" ]; then
+        while IFS= read -r d; do
+            [ -z "$d" ] && continue
+            name="$(basename "$d")"
+            [[ "$name" =~ ^[0-9]+$ ]] || continue
+            printf '%s\n' "$name"
+            found=1
+        done < <(find "${root}/data/server_bots" -maxdepth 1 -mindepth 1 -type d 2>/dev/null | sort -n)
+    fi
+    [ "$found" -eq 1 ] && return 0
+    napcat_framework_fallback_port "$root"
+    printf '\n'
+}
+
+# 兼容旧调用：取扫描到的第一个端口
+napcat_guess_framework_port() {
+    napcat_list_framework_ports "$1" | head -n1
+}
+
+# 扫描磁盘：有 server_bots/{port} 则每个端口一条；删掉的端口下次扫描即消失
 napcat_scan_frameworks_json() {
     local seen="" root id label port frameworks='[]'
     for root in $(napcat_framework_candidates); do
@@ -96,17 +124,21 @@ napcat_scan_frameworks_json() {
         case " $seen " in *" $root "*) continue ;; esac
         seen="$seen $root"
         [ -f "${root}/package.json" ] || [ -f "${root}/src/bot.js" ] || [ -f "${root}/lib/bot.js" ] || continue
-        id="$(napcat_framework_id_from_root "$root")"
         label="$(napcat_framework_label "$root")"
-        port="$(napcat_guess_framework_port "$root")"
-        # jq≤1.6：label 是保留字，不能用 --arg label / $label（键也须写成 "label"）
-        frameworks="$(jq -n --argjson arr "$(napcat_json_or "$frameworks" '[]')" \
-            --arg id "$id" --arg fw_label "$label" --arg root "$root" --argjson port "$port" \
-            '$arr + [{id:$id,"label":$fw_label,root:$root,default_port:$port,
-                      ws_host:"127.0.0.1",ws_path:"OneBotv11"}]')" || {
-            NAPCAT_LAST_ERR="扫描框架失败: $root"
-            continue
-        }
+        while IFS= read -r port; do
+            [ -z "$port" ] && continue
+            port="$(napcat_coerce_port "$port" "")"
+            [[ "$port" =~ ^[0-9]+$ ]] || continue
+            id="$(napcat_framework_id "$root" "$port")"
+            # jq≤1.6：label 是保留字，不能用 --arg label / $label（键也须写成 "label"）
+            frameworks="$(jq -n --argjson arr "$(napcat_json_or "$frameworks" '[]')" \
+                --arg id "$id" --arg fw_label "$label" --arg root "$root" --argjson port "$port" \
+                '$arr + [{id:$id,"label":$fw_label,root:$root,default_port:$port,
+                          ws_host:"127.0.0.1",ws_path:"OneBotv11"}]')" || {
+                NAPCAT_LAST_ERR="扫描框架失败: $root:$port"
+                continue
+            }
+        done < <(napcat_list_framework_ports "$root")
     done
     printf '%s' "$frameworks"
 }
@@ -135,15 +167,13 @@ napcat_load_prefs() {
             echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
             return 1
         fi
+        # 扫描结果覆盖同 root 的旧条目（端口目录删了就消失）；其它 root 的手添条目保留
         if ! err="$(echo "$merged" | jq --argjson scanned "$scanned" \
             '(.frameworks // []) as $saved |
+             ($scanned | map(.root) | unique) as $roots |
              .frameworks = (
-               reduce $scanned[] as $item ($saved;
-                 if any(.[]; .root == $item.root) then
-                   map(if .root == $item.root then $item else . end)
-                 else
-                   . + [$item]
-                 end)
+               [ $saved[] | select(.root as $r | ($roots | index($r) | not)) ]
+               + $scanned
              )' 2>&1)"; then
             NAPCAT_LAST_ERR="合并框架扫描失败: ${err:-未知错误}"
             echo "$defaults" | jq --argjson fw "$scanned" '.frameworks = $fw'
@@ -181,20 +211,32 @@ napcat_refresh_frameworks() {
     napcat_save_prefs "$(napcat_load_prefs)"
 }
 
+# 解析框架：支持新 id(xrk-agt-8080) 与旧 id(xrk-agt)+link 端口
 napcat_get_framework() {
-    local id="$1" prefs fw root derived
+    local id="$1" want_port="${2:-}" prefs fw root derived port
     prefs="$(napcat_load_prefs)"
     prefs="$(napcat_json_or "$prefs" '{}')"
     fw="$(echo "$prefs" | jq -c --arg id "$id" '.frameworks[]? | select(.id == $id)' | head -n1)"
+    # 旧绑定只有 basename id：用端口拼出 xrk-agt-6969 再找
+    if [ -z "$fw" ] && [ -n "$want_port" ]; then
+        want_port="$(napcat_coerce_port "$want_port" "")"
+        if [[ "$want_port" =~ ^[0-9]+$ ]]; then
+            fw="$(echo "$prefs" | jq -c --arg id "${id}-${want_port}" \
+                '.frameworks[]? | select(.id == $id)' | head -n1)"
+            [ -z "$fw" ] && fw="$(echo "$prefs" | jq -c --arg base "$id" --argjson p "$want_port" \
+                '.frameworks[]? | select((.id|startswith($base + "-")) and .default_port == $p)' | head -n1)"
+        fi
+    fi
     [ -n "$fw" ] || return 1
     root="$(echo "$fw" | jq -r '.root // ""')"
+    port="$(echo "$fw" | jq -r '.default_port // empty')"
     [ -n "$root" ] || {
         NAPCAT_LAST_ERR="框架 ${id} 缺少安装目录，请 nt → 框架管理 → 重新扫描或手动添加"
         return 1
     }
-    derived="$(napcat_framework_id_from_root "$root")"
-    [ "$derived" = "$id" ] || {
-        NAPCAT_LAST_ERR="napcat_prefs 框架 id=${id} 与目录 ${root} 不一致（应为 ${derived}）\n请 nt → 框架管理 → 重新扫描，再修改 QQ 绑定"
+    derived="$(napcat_framework_id "$root" "$port")"
+    [ "$(echo "$fw" | jq -r '.id')" = "$derived" ] || {
+        NAPCAT_LAST_ERR="napcat_prefs 框架 id=$(echo "$fw" | jq -r '.id') 与目录/端口不一致（应为 ${derived}）\n请 nt → 框架管理 → 重新扫描，再修改 QQ 绑定"
         return 1
     }
     printf '%s' "$fw"
@@ -235,7 +277,8 @@ napcat_resolve_link_token() {
     [ -n "$global_token" ] && { printf '%s' "$global_token"; return 0; }
 
     id="$(echo "$link_json" | jq -r '.framework_id // ""')"
-    [ -n "$id" ] && root="$(napcat_get_framework "$id" | jq -r '.root // ""')"
+    [ -n "$id" ] && root="$(napcat_get_framework "$id" "$(echo "$link_json" | jq -r '.port // empty')" \
+        | jq -r '.root // ""')"
     [ -n "$root" ] && napcat_read_api_key "$root" && return 0
     return 1
 }
@@ -265,15 +308,18 @@ napcat_resolve_link_endpoint() {
     local link="$1" fw="${2:-}" id label ws_host port ws_path root
     id="$(echo "$link" | jq -r '.framework_id // ""')"
     [ -n "$id" ] || return 1
-    [ -z "$fw" ] && fw="$(napcat_get_framework "$id")" || true
+    port="$(echo "$link" | jq -r '.port // empty')"
+    if [ -z "$fw" ]; then
+        fw="$(napcat_get_framework "$id" "$port" 2>/dev/null || true)"
+    fi
     [ -n "$fw" ] || return 1
     root="$(echo "$fw" | jq -r '.root // ""')"
     [ -n "$root" ] || return 1
     label="$(napcat_framework_label "$root")"
     ws_host="$(echo "$link" | jq -r '.ws_host // empty')"
     [ -z "$ws_host" ] && ws_host="$(echo "$fw" | jq -r '.ws_host // "127.0.0.1"')"
-    port="$(echo "$link" | jq -r '.port // empty')"
     [ -z "$port" ] && port="$(echo "$fw" | jq -r '.default_port // empty')"
+    port="$(napcat_coerce_port "$port" "$(echo "$fw" | jq -r '.default_port // empty')")"
     port="$(napcat_coerce_port "$port" "$(napcat_guess_framework_port "$root")")"
     ws_path="$(echo "$link" | jq -r '.ws_path // empty')"
     [ -z "$ws_path" ] && ws_path="$(echo "$fw" | jq -r '.ws_path // "OneBotv11"')"
@@ -377,10 +423,11 @@ napcat_qq_links_summary() {
         napcat_link_enabled "$link" || continue
         id="$(echo "$link" | jq -r '.framework_id // empty')"
         [ -n "$id" ] || continue
-        fw="$(napcat_get_framework "$id" 2>/dev/null)" || continue
+        port="$(echo "$link" | jq -r '.port // empty')"
+        fw="$(napcat_get_framework "$id" "$port" 2>/dev/null)" || continue
         [ -n "$fw" ] || continue
         label="$(echo "$fw" | jq -r '.label // .id')"
-        port="$(napcat_coerce_port "$(echo "$link" | jq -r '.port // empty')" "$(echo "$fw" | jq -r '.default_port // 2537')")"
+        port="$(napcat_coerce_port "$port" "$(echo "$fw" | jq -r '.default_port // 2537')")"
         parts="${parts:+$parts, }${label}:${port}"
     done < <(jq -c '.links[]?' "$qq_file")
     [ -n "$parts" ] && printf '%s' "$parts" || printf '未绑定框架'
@@ -500,7 +547,7 @@ napcat_write_onebot_config() {
             NAPCAT_LAST_ERR="QQ 绑定缺少 framework_id"
             return 1
         }
-        fw="$(napcat_get_framework "$id")" || {
+        fw="$(napcat_get_framework "$id" "$(echo "$link" | jq -r '.port // empty')")" || {
             [ -n "${NAPCAT_LAST_ERR:-}" ] || NAPCAT_LAST_ERR="未注册框架: ${id}（nt → 框架管理 → 扫描）"
             return 1
         }
