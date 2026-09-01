@@ -27,8 +27,8 @@ HAMSTER_REGION=cn bash <(curl -fsSL https://gitee.com/duac/hamster-script/raw/ma
 ## 使用
 
 ```bash
-cs              # 主菜单
-cs update       # 更新（按区域试各镜像；全失败会提示检查网络）
+cs              # 主菜单（脚本设置：更新 / 切换更新源）
+cs update       # 更新（只查当前配置源：gitee / gitcode / github）
 nt              # NapCat 管理（多 QQ · 多框架 · WebUI）
 nt <QQ>         # 启动已配置 QQ
 nt --sync-onebot <QQ>  # 仅同步 onebot（需先停 QQ）

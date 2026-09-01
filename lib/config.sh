@@ -2,8 +2,8 @@
 
 # 配置管理
 
-# 用户可覆盖的路径键
-_CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir work_dir)
+# 用户可覆盖的配置键
+_CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir work_dir update_source)
 
 # YAML 解析
 解析YAML() {
@@ -151,9 +151,10 @@ _CONFIG_PATH_KEYS=(log_dir backup_dir temp_dir config_dir data_dir install_dir w
     local user_config="$HOME/.config/${PROJECT_NAME}/config.yaml"
     确保目录 "$(dirname "$user_config")"
     
+    # 未显式保存时仍写入默认路径项；update_source 仅在有值时写出
     {
         echo "# Hamster Script 用户配置覆盖"
-        echo "# 由快捷设置自动生成"
+        echo "# 由快捷设置 / 脚本设置自动生成"
         for key in "${_CONFIG_PATH_KEYS[@]}"; do
             if [[ -n "${CONFIG[$key]:-}" ]]; then
                 echo "$key: ${CONFIG[$key]}"

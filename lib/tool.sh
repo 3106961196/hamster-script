@@ -245,6 +245,11 @@ _工具_解析安装目录() {
     if [[ -f ".env" ]]; then
         cp .env .env.backup
     fi
+
+    # 仓库迁移时同步 origin，避免仍拉旧地址
+    if [[ -n "${TOOL_REPO:-}" ]] && git remote get-url origin &>/dev/null; then
+        git remote set-url origin "$TOOL_REPO"
+    fi
     
     # 拉取最新代码
     git pull origin main 2>/dev/null || git pull origin master

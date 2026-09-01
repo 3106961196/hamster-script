@@ -9,3 +9,4 @@ data_dir: /var/lib/hamster-scripts
 install_dir: /cs
 work_dir: /root/cs
 node_min_major: 26
+# update_source: gitee | gitcode | github（不写则国内 gitee、海外 github）

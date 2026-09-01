@@ -1,11 +1,43 @@
 #!/bin/bash
 
-# 三平台镜像（更新时按可达性自动选用；国内优先 Gitee/GitCode）
+# 三平台镜像（由 update_source 指定其一；不再同时探测多个）
 _UPDATE_GITHUB_URL="https://github.com/3106961196/hamster-script.git"
 _UPDATE_GITEE_URL="https://gitee.com/duac/hamster-script.git"
 _UPDATE_GITCODE_URL="https://gitcode.com/duac/hamster-script.git"
 
-# ─── 内部辅助函数 ─────────────────────────────────────────
+# ─── 更新源 ─────────────────────────────────────────
+
+_更新_源URL() {
+    case "$1" in
+        github) printf '%s' "$_UPDATE_GITHUB_URL" ;;
+        gitee) printf '%s' "$_UPDATE_GITEE_URL" ;;
+        gitcode) printf '%s' "$_UPDATE_GITCODE_URL" ;;
+        *) return 1 ;;
+    esac
+}
+
+_更新_源显示名() {
+    case "$1" in
+        github) echo "GitHub" ;;
+        gitee) echo "Gitee" ;;
+        gitcode) echo "GitCode" ;;
+        *) echo "$1" ;;
+    esac
+}
+
+# 解析当前更新源：显式配置 > 区域默认（国内 Gitee，海外 GitHub）
+_更新_当前源() {
+    local src
+    src="$(获取配置 "update_source" "")"
+    case "$src" in
+        github|gitee|gitcode) printf '%s' "$src"; return 0 ;;
+    esac
+    if _更新_国内优先; then
+        printf '%s' "gitee"
+    else
+        printf '%s' "github"
+    fi
+}
 
 _更新_分支() {
     git symbolic-ref -q --short HEAD 2>/dev/null || echo main
@@ -20,39 +52,24 @@ _更新_国内优先() {
     return 1
 }
 
-# 确保 github / gitee / gitcode 远程存在（不改动 origin）
-_更新_注册镜像远程() {
+# 注册/校正指定远程，并把 origin 指到同一地址（单源更新）
+_更新_注册远程() {
+    local name="$1"
+    local url
+    url="$(_更新_源URL "$name")" || return 1
     cd "$PROJECT_ROOT" || return 1
-    local name url
-    local -a pairs=(
-        "github|${_UPDATE_GITHUB_URL}"
-        "gitee|${_UPDATE_GITEE_URL}"
-        "gitcode|${_UPDATE_GITCODE_URL}"
-    )
-    for pair in "${pairs[@]}"; do
-        name="${pair%%|*}"
-        url="${pair#*|}"
-        if git remote get-url "$name" >/dev/null 2>&1; then
-            git remote set-url "$name" "$url" >/dev/null 2>&1 || true
-        else
-            git remote add "$name" "$url" >/dev/null 2>&1 || true
-        fi
-    done
-}
 
-# 输出尝试顺序（空格分隔）
-_更新_远程顺序() {
-    local -a order
-    if _更新_国内优先; then
-        order=(gitee gitcode github)
+    if git remote get-url "$name" >/dev/null 2>&1; then
+        git remote set-url "$name" "$url" >/dev/null 2>&1 || true
     else
-        order=(github gitee gitcode)
+        git remote add "$name" "$url" >/dev/null 2>&1 || true
     fi
-    # origin 保留用户自定义地址，优先试一次
+
     if git remote get-url origin >/dev/null 2>&1; then
-        order=(origin "${order[@]}")
+        git remote set-url origin "$url" >/dev/null 2>&1 || true
+    else
+        git remote add origin "$url" >/dev/null 2>&1 || true
     fi
-    printf '%s' "${order[*]}"
 }
 
 # 某远程上尝试的分支名（Gitee 默认 master，其余多为 main）
@@ -64,37 +81,26 @@ _更新_远程分支候选() {
     esac
 }
 
-# 拉取各镜像；成功则选提交时间最新的 tip
-# 输出: ref|source   失败 return 1
+# 仅拉取当前配置源；成功输出: ref|source
 _更新_拉取最佳() {
     cd "$PROJECT_ROOT" || return 1
-    _更新_注册镜像远程 || return 1
 
-    local local_branch name remote_branch tip ts best_ts=0 best_ref="" best_name="" fetched=0
+    local name local_branch remote_branch tip
+    name="$(_更新_当前源)"
+    _更新_注册远程 "$name" || return 1
+
     local_branch="$(_更新_分支)"
 
-    for name in $(_更新_远程顺序); do
-        git remote get-url "$name" >/dev/null 2>&1 || continue
-        for remote_branch in $(_更新_远程分支候选 "$name" "$local_branch"); do
-            if timeout 45 git fetch --depth 1 --prune "$name" \
-                "+refs/heads/${remote_branch}:refs/remotes/${name}/${remote_branch}" >/dev/null 2>&1; then
-                tip="${name}/${remote_branch}"
-                git rev-parse --verify "$tip" >/dev/null 2>&1 || continue
-                fetched=1
-                ts=$(git log -1 --format=%ct "$tip" 2>/dev/null || echo 0)
-                [[ "$ts" =~ ^[0-9]+$ ]] || ts=0
-                if [[ -z "$best_ref" || "$ts" -gt "$best_ts" ]]; then
-                    best_ts=$ts
-                    best_ref=$tip
-                    best_name=$name
-                fi
-                break
-            fi
-        done
+    for remote_branch in $(_更新_远程分支候选 "$name" "$local_branch"); do
+        if timeout 45 git fetch --depth 1 --prune "$name" \
+            "+refs/heads/${remote_branch}:refs/remotes/${name}/${remote_branch}" >/dev/null 2>&1; then
+            tip="${name}/${remote_branch}"
+            git rev-parse --verify "$tip" >/dev/null 2>&1 || continue
+            printf '%s|%s' "$tip" "$name"
+            return 0
+        fi
     done
-
-    [[ "$fetched" -eq 1 && -n "$best_ref" ]] || return 1
-    printf '%s|%s' "$best_ref" "$best_name"
+    return 1
 }
 
 _更新_检查() {
@@ -132,19 +138,72 @@ _更新_执行() {
     return 1
 }
 
-# ─── 公开函数 ─────────────────────────────────────────
+# ─── 菜单 ─────────────────────────────────────────
+
+脚本设置_菜单() {
+    while true; do
+        local choice src label
+        src="$(_更新_当前源)"
+        label="$(_更新_源显示名 "$src")"
+        choice=$(界面子菜单 "脚本设置" "当前更新源: ${label}" \
+            "1" "检查并更新脚本" \
+            "2" "切换脚本更新源")
+
+        case "$choice" in
+            1) 更新_执行 ;;
+            2) 更新_切换源 ;;
+            b|"") break ;;
+        esac
+    done
+}
 
 更新_菜单() {
-    更新_执行
+    脚本设置_菜单
+}
+
+更新_切换源() {
+    local current choice name url label
+    current="$(_更新_当前源)"
+
+    choice=$(界面子菜单 "切换脚本更新源" "当前: $(_更新_源显示名 "$current")（只查所选仓库）" \
+        "1" "Gitee$([ "$current" = gitee ] && echo ' *')" \
+        "2" "GitCode$([ "$current" = gitcode ] && echo ' *')" \
+        "3" "GitHub$([ "$current" = github ] && echo ' *')")
+
+    case "$choice" in
+        1) name=gitee ;;
+        2) name=gitcode ;;
+        3) name=github ;;
+        *) return ;;
+    esac
+
+    if [[ "$name" == "$current" ]] && [[ "$(获取配置 "update_source" "")" == "$name" ]]; then
+        界面消息 "已是 $(_更新_源显示名 "$name")" "提示"
+        return
+    fi
+
+    CONFIG[update_source]="$name"
+    保存用户配置
+
+    url="$(_更新_源URL "$name")"
+    if [[ -d "$PROJECT_ROOT/.git" ]]; then
+        _更新_注册远程 "$name" || true
+    fi
+
+    label="$(_更新_源显示名 "$name")"
+    界面成功 "更新源已切换为: ${label}\n${url}"
 }
 
 更新_执行() {
     local result exit_code status rest
     local behind current_commit latest_commit ref source
     local changes diff_summary dirty_msg
+    local src_label
+
+    src_label="$(_更新_源显示名 "$(_更新_当前源)")"
 
     界面清屏
-    printf '正在检查更新（GitHub / Gitee / GitCode）...\n\n' >&2
+    printf '正在检查更新（%s）...\n\n' "$src_label" >&2
     result=$(_更新_检查)
     exit_code=$?
     界面清屏
@@ -155,7 +214,7 @@ _更新_执行() {
     fi
 
     if [[ $exit_code -eq 3 || -z "$result" ]]; then
-        界面错误 "三平台均无法拉取\n请检查网络，或稍后重试"
+        界面错误 "无法从 ${src_label} 拉取\n请检查网络，或在「脚本设置」中换源后重试"
         return 1
     fi
 
@@ -165,7 +224,7 @@ _更新_执行() {
     if [[ "$status" == "latest" ]]; then
         source="${rest%%|*}"
         ref="${rest#*|}"
-        界面消息 "当前已是最新版本\n来源: ${source}" "提示"
+        界面消息 "当前已是最新版本\n来源: $(_更新_源显示名 "$source")" "提示"
         return
     fi
 
@@ -189,12 +248,12 @@ _更新_执行() {
         dirty_msg="\n\n⚠️ 检测到本地未提交修改，更新将丢失这些改动"
     fi
 
-    if ! 界面确认 "来源: ${source}\n${current_commit} → ${latest_commit}（约 ${behind} 提交）\n\n确定要更新到最新版本吗？${dirty_msg}"; then
+    if ! 界面确认 "来源: $(_更新_源显示名 "$source")\n${current_commit} → ${latest_commit}（约 ${behind} 提交）\n\n确定要更新到最新版本吗？${dirty_msg}"; then
         return
     fi
 
-    if 界面任务 "正在从 ${source} 更新..." _更新_执行 "$ref"; then
-        界面成功 "脚本更新成功！（${source}）"
+    if 界面任务 "正在从 $(_更新_源显示名 "$source") 更新..." _更新_执行 "$ref"; then
+        界面成功 "脚本更新成功！（$(_更新_源显示名 "$source")）"
 
         echo ""
         echo -e "${COLOR_PURPLE}========== 代码变更统计 ==========${COLOR_RESET}"
