@@ -402,9 +402,10 @@ NapCat_下载并解压包() {
 
     mkdir -p "${work_dir}/NapCat"
     if [[ ! -f "$zip_file" ]]; then
-        日志信息 "下载 NapCat 安装包（GitHub，国内自动走加速镜像）..."
-        日志信息 "→ ${url}"
-        网络_下载 "$url" "$zip_file" 3 || return 1
+        local region="?"
+        type 网络_检测区域 &>/dev/null && region=$(网络_检测区域 2>/dev/null || echo "?")
+        日志信息 "下载 NapCat 安装包（区域=${region}；本地代理优先，否则镜像/直连回退）..."
+        网络_下载 "$url" "$zip_file" 2 || return 1
     else
         日志信息 "使用已缓存的 NapCat.Shell.zip"
     fi

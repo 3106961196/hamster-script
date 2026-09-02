@@ -62,23 +62,34 @@ _包管理_Chromium选镜像() {
 
 _包管理_Chromium导入密钥() {
     local keyring="/usr/share/keyrings/xtradeb-chromium.gpg"
-    local server fp="0x${_CHROMIUM_PPA_FP}"
+    local server fp="0x${_CHROMIUM_PPA_FP}" tmp
 
     rm -f "$keyring"
+    tmp=$(mktemp)
+
+    # 优先 HTTPS（机房常墙 hkp）；再试 keyserver
+    if curl -fsSL --connect-timeout 15 --max-time 40 \
+        "https://keyserver.ubuntu.com/pks/lookup?op=get&search=${fp}" -o "$tmp" 2>/dev/null \
+        && gpg --batch --yes --dearmor -o "$keyring" "$tmp" 2>/dev/null \
+        && gpg --no-default-keyring --keyring "$keyring" --list-keys "$fp" &>/dev/null; then
+        chmod 644 "$keyring" 2>/dev/null || true
+        rm -f "$tmp"
+        日志信息 "GPG 密钥已导入 (web)"
+        return 0
+    fi
+
     for server in keyserver.ubuntu.com keys.openpgp.org pgp.mit.edu; do
         if gpg --batch --yes --no-default-keyring --keyring "$keyring" \
-            --keyserver "hkp://${server}:80" --recv-keys "$fp" 2>/dev/null; then
+            --keyserver "hkp://${server}:80" --recv-keys "$fp" 2>/dev/null \
+            && gpg --no-default-keyring --keyring "$keyring" --list-keys "$fp" &>/dev/null; then
+            chmod 644 "$keyring" 2>/dev/null || true
+            rm -f "$tmp"
             日志信息 "GPG 密钥已导入 (${server})"
             return 0
         fi
     done
 
-    if curl -fsSL "https://keyserver.ubuntu.com/pks/lookup?op=get&search=${fp}" 2>/dev/null \
-        | gpg --batch --yes --dearmor -o "$keyring" 2>/dev/null; then
-        日志信息 "GPG 密钥已导入 (web)"
-        return 0
-    fi
-
+    rm -f "$tmp" "$keyring"
     日志错误 "Chromium PPA 密钥导入失败"
     return 1
 }
@@ -104,18 +115,15 @@ _包管理_ChromiumApt更新() {
     fi
 
     if grep -q NO_PUBKEY "$log" 2>/dev/null; then
-        local key
-        while read -r key; do
-            [[ -n "$key" ]] || continue
-            gpg --batch --yes --no-default-keyring \
-                --keyring /usr/share/keyrings/xtradeb-chromium.gpg \
-                --keyserver hkp://keyserver.ubuntu.com:80 --recv-keys "$key" 2>/dev/null || true
-        done < <(grep NO_PUBKEY "$log" | awk '{print $NF}' | sort -u)
+        日志警告 "PPA 缺公钥，重新导入..."
+        _包管理_Chromium导入密钥 || true
         DEBIAN_FRONTEND=noninteractive apt-get update -qq 2>/dev/null || true
     fi
 
     rm -f "$log"
 }
+
+# Ubuntu 的 chromium-browser 是 snap 过渡包，机房常连不上 snap store —— 禁止回退
 
 _包管理_ChromiumApt安装() {
     local codename mirror
@@ -145,10 +153,16 @@ _包管理_ChromiumApt安装() {
     _包管理_Chromium写PPA源 "$codename" "$mirror"
     _包管理_ChromiumApt更新 "$codename"
 
-    if apt-cache search chromium 2>/dev/null | grep -q '^chromium '; then
-        :
-    elif ! apt-cache policy chromium 2>/dev/null | grep -q xtradeb; then
-        日志警告 "PPA 未验证，尝试继续安装"
+    if ! apt-cache policy chromium 2>/dev/null | grep -q xtradeb; then
+        日志警告 "PPA 未生效，再试官方 Launchpad 源"
+        _包管理_Chromium写PPA源 "$codename" "ppa.launchpadcontent.net"
+        _包管理_ChromiumApt更新 "$codename"
+    fi
+
+    if ! apt-cache policy chromium 2>/dev/null | grep -qE 'Candidate: [^n]'; then
+        日志错误 "无可用 chromium 候选（PPA 未提供包）。请检查网络/GPG 后重试"
+        日志错误 "请勿使用 chromium-browser（Ubuntu 会强制走 snap）"
+        return 1
     fi
 
     日志信息 "正在通过 PPA 安装 Chromium..."
@@ -158,12 +172,8 @@ _包管理_ChromiumApt安装() {
         return 0
     fi
 
-    日志警告 "PPA 安装失败，尝试系统源 chromium-browser"
-    DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y chromium-browser 2>/dev/null \
-        || DEBIAN_FRONTEND=noninteractive NEEDRESTART_MODE=a apt-get install -y chromium 2>/dev/null \
-        || return 1
-    _包管理_Chromium链接
-    return 0
+    日志错误 "PPA 安装 Chromium 失败"
+    return 1
 }
 
 包管理_确保Chromium() {

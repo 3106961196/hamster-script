@@ -26,21 +26,26 @@ _网络_准备下载器() {
 }
 
 _网络_下载一次() {
-    local url="$1" out="$2" progress max_time="${HAMSTER_DL_MAX_TIME:-900}"
+    local url="$1" out="$2" progress
+    local connect_timeout="${HAMSTER_DL_CONNECT_TIMEOUT:-20}"
+    local max_time="${HAMSTER_DL_MAX_TIME:-900}"
     progress=$(_网络_下载进度目标)
     if 命令存在 curl; then
+        # 单条线路连不上就换候选，避免 GitHub 直连挂死整段安装
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
-            curl -fsSL --connect-timeout 15 --max-time "$max_time" -o "$out" "$url" 2>/dev/null
+            curl -fsSL --connect-timeout "$connect_timeout" --max-time "$max_time" \
+                --retry 2 --retry-delay 1 -o "$out" "$url" 2>/dev/null
         else
-            curl -fL --progress-bar --connect-timeout 15 --max-time "$max_time" -o "$out" "$url" 2>"$progress"
+            curl -fL --progress-bar --connect-timeout "$connect_timeout" --max-time "$max_time" \
+                --retry 2 --retry-delay 1 -o "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
     if 命令存在 wget; then
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
-            wget -q --tries=3 --timeout=60 -O "$out" "$url" 2>/dev/null
+            wget -q --tries=3 --timeout="$connect_timeout" -O "$out" "$url" 2>/dev/null
         else
-            wget --tries=3 --timeout=60 --show-progress -O "$out" "$url" 2>"$progress"
+            wget --tries=3 --timeout="$connect_timeout" --show-progress -O "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
@@ -70,15 +75,10 @@ _网络_下载一次() {
         candidates=("${dl_url:-$url}")
     fi
 
-    [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志信息 "下载 $name"
+    [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志信息 "下载 $name（${#candidates[@]} 条线路）"
     for dl_url in "${candidates[@]}"; do
         [[ -z "$dl_url" ]] && continue
-        [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || {
-            case "$dl_url" in
-                https://github.com/*) ;;
-                *) 日志信息 "→ ${dl_url%%\?*}" ;;
-            esac
-        }
+        [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志信息 "→ ${dl_url%%\?*}"
         for ((i=1; i<=tries; i++)); do
             rm -f "$tmp" 2>/dev/null || true
             if _网络_下载一次 "$dl_url" "$tmp"; then

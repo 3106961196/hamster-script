@@ -222,28 +222,73 @@ GitHub_克隆() {
     return 1
 }
 
-# GitHub 下载 URL 候选（国内：公共加速镜像 → 直连）
+# 本机/环境是否配置了本地代理（如 mihomo 127.0.0.1:7890）
+_GitHub_有本地代理() {
+    case "${https_proxy:-}${HTTPS_PROXY:-}${http_proxy:-}${HTTP_PROXY:-}${ALL_PROXY:-}${all_proxy:-}" in
+        *127.0.0.1*|*localhost*) return 0 ;;
+    esac
+    return 1
+}
+
+# dialog/非登录壳常不读 /etc/environment：本机 7890 在听则自动补代理
+_GitHub_补本地代理环境() {
+    _GitHub_有本地代理 && return 0
+    if command -v ss &>/dev/null; then
+        ss -lntp 2>/dev/null | grep -qE '127\.0\.0\.1:7890\b' || return 1
+    elif command -v curl &>/dev/null; then
+        curl -fsS --connect-timeout 1 --max-time 2 -o /dev/null http://127.0.0.1:7890 2>/dev/null || return 1
+    else
+        return 1
+    fi
+    export http_proxy="${http_proxy:-http://127.0.0.1:7890}"
+    export https_proxy="${https_proxy:-http://127.0.0.1:7890}"
+    export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}"
+    export HTTPS_PROXY="${HTTPS_PROXY:-$https_proxy}"
+    export ALL_PROXY="${ALL_PROXY:-socks5h://127.0.0.1:7890}"
+    export all_proxy="${all_proxy:-$ALL_PROXY}"
+    export NO_PROXY="${NO_PROXY:-127.0.0.1,localhost,::1}"
+    export no_proxy="${no_proxy:-$NO_PROXY}"
+    echo "[git] 已启用本机代理 127.0.0.1:7890" >&2
+}
+
+# GitHub 下载 URL 候选
+# - 有本地代理：直连优先（走系统代理），镜像兜底
+# - 国内无本地代理：公共加速镜像 → 直连
+# - 海外：直连 → 镜像兜底（避免机房误判/直连挂死时无退路）
 GitHub_下载候选() {
-    local url="$1" direct proxy proxied u
+    local url="$1" direct proxy u
     local -A _seen=()
-    local -a urls=() out=()
+    local -a urls=() out=() mirrors=()
 
     case "$url" in
         https://github.com/*|https://raw.githubusercontent.com/*) ;;
         *) printf '%s\n' "$url"; return 0 ;;
     esac
 
+    _GitHub_补本地代理环境 || true
+
     direct="$(_GitHub_清理URL "$url")"
     [[ -z "$direct" ]] && return 1
 
-    if 是否国内区域; then
-        proxy="$(_挑选GitHub代理)"
-        [[ -n "$proxy" ]] && urls+=("$(_代理化GitHub地址 "$proxy" "$direct")")
-        for proxy in "${_GITHUB_PROXIES[@]}"; do
-            urls+=("$(_代理化GitHub地址 "$proxy" "$direct")")
-        done
+    # 有本地代理时不预探公共镜像（每个探针数秒，易拖死安装）
+    if ! _GitHub_有本地代理; then
+        proxy="$(_挑选GitHub代理 2>/dev/null)" || true
+        [[ -n "$proxy" ]] && mirrors+=("$(_代理化GitHub地址 "$proxy" "$direct")")
     fi
-    urls+=("$direct")
+    for proxy in "${_GITHUB_PROXIES[@]}"; do
+        mirrors+=("$(_代理化GitHub地址 "$proxy" "$direct")")
+    done
+
+    if _GitHub_有本地代理; then
+        urls+=("$direct")
+        urls+=("${mirrors[@]}")
+    elif 是否国内区域; then
+        urls+=("${mirrors[@]}")
+        urls+=("$direct")
+    else
+        urls+=("$direct")
+        urls+=("${mirrors[@]}")
+    fi
 
     for u in "${urls[@]}"; do
         [[ -n "$u" && -z "${_seen[$u]:-}" ]] && { _seen[$u]=1; out+=("$u"); }

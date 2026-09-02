@@ -103,11 +103,41 @@ _INSTALL_MAX_RETRIES=3
     fi
 }
 
+# 等待 apt/dpkg 锁（避免与 unattended-upgrades 等撞车）
+_包管理_等待Apt锁() {
+    local i lock
+    local -a locks=(
+        /var/lib/apt/lists/lock
+        /var/lib/dpkg/lock-frontend
+        /var/lib/dpkg/lock
+        /var/cache/apt/archives/lock
+    )
+    for i in $(seq 1 90); do
+        local busy=0
+        for lock in "${locks[@]}"; do
+            [[ -e "$lock" ]] || continue
+            if command -v fuser &>/dev/null; then
+                fuser "$lock" >/dev/null 2>&1 && busy=1 && break
+            elif command -v lsof &>/dev/null; then
+                lsof "$lock" >/dev/null 2>&1 && busy=1 && break
+            fi
+        done
+        [[ "$busy" -eq 0 ]] && return 0
+        [[ "$i" -eq 1 ]] && 日志信息 "等待 apt/dpkg 锁释放..."
+        sleep 2
+    done
+    日志警告 "等待 apt 锁超时，仍将尝试继续"
+    return 1
+}
+
 包管理_更新源() {
     local pkg_manager
     pkg_manager=$(包管理_获取管理器)
     case "$pkg_manager" in
-        apt) apt update 2>&1 || return 1 ;;
+        apt)
+            _包管理_等待Apt锁 || true
+            DEBIAN_FRONTEND=noninteractive apt-get update 2>&1 || return 1
+            ;;
         yum) yum makecache || return 1 ;;
         pacman) pacman -Sy || return 1 ;;
         apk) apk update || return 1 ;;
