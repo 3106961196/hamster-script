@@ -29,23 +29,35 @@ _网络_下载一次() {
     local url="$1" out="$2" progress
     local connect_timeout="${HAMSTER_DL_CONNECT_TIMEOUT:-20}"
     local max_time="${HAMSTER_DL_MAX_TIME:-900}"
+    local retries=1
     progress=$(_网络_下载进度目标)
+
+    # 公共 GitHub 镜像：短连超时、不重试，快速换下一条（机房常墙掉它们）
+    # 整次超时与普通下载对齐——LinuxQQ 等 release 包很大，120s 会中途被掐断
+    case "$url" in
+        https://github.com/*|https://raw.githubusercontent.com/*|https://api.github.com/*) ;;
+        https://gh-proxy.com/*|https://ghfast.top/*|https://mirror.ghproxy.com/*|https://ghp.ci/*|https://gitclone.com/*|*/https://github.com/*)
+            connect_timeout="${HAMSTER_MIRROR_CONNECT_TIMEOUT:-8}"
+            max_time="${HAMSTER_MIRROR_MAX_TIME:-$max_time}"
+            retries=0
+            ;;
+    esac
+
     if 命令存在 curl; then
-        # 单条线路连不上就换候选，避免 GitHub 直连挂死整段安装
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
             curl -fsSL --connect-timeout "$connect_timeout" --max-time "$max_time" \
-                --retry 2 --retry-delay 1 -o "$out" "$url" 2>/dev/null
+                --retry "$retries" --retry-delay 1 -o "$out" "$url" 2>/dev/null
         else
             curl -fL --progress-bar --connect-timeout "$connect_timeout" --max-time "$max_time" \
-                --retry 2 --retry-delay 1 -o "$out" "$url" 2>"$progress"
+                --retry "$retries" --retry-delay 1 -o "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
     if 命令存在 wget; then
         if [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || ! _网络_是否TTY; then
-            wget -q --tries=3 --timeout="$connect_timeout" -O "$out" "$url" 2>/dev/null
+            wget -q --tries=$((retries + 1)) --timeout="$connect_timeout" -O "$out" "$url" 2>/dev/null
         else
-            wget --tries=3 --timeout="$connect_timeout" --show-progress -O "$out" "$url" 2>"$progress"
+            wget --tries=$((retries + 1)) --timeout="$connect_timeout" --show-progress -O "$out" "$url" 2>"$progress"
         fi
         return $?
     fi
@@ -60,6 +72,9 @@ _网络_下载一次() {
     [[ -z "$url" || -z "$out" ]] && return 1
     _网络_准备下载器 || { 日志错误 "缺少 curl/wget，且自动安装失败"; return 1; }
 
+    # 确保 dialog/非登录壳也能用上本机 mihomo
+    type _GitHub_补本地代理环境 &>/dev/null && _GitHub_补本地代理环境 || true
+
     dir=$(dirname "$out")
     [[ -n "$dir" && "$dir" != "." ]] && mkdir -p "$dir" 2>/dev/null || true
 
@@ -73,6 +88,13 @@ _网络_下载一次() {
         dl_url="$url"
         type getgh &>/dev/null && dl_url=$(getgh "$url" 2>/dev/null || true)
         candidates=("${dl_url:-$url}")
+    fi
+
+    # 有本地代理时，GitHub 资源默认只试 1 次（直连经代理即可）
+    if type _GitHub_有本地代理 &>/dev/null && _GitHub_有本地代理; then
+        case "$url" in
+            https://github.com/*|https://raw.githubusercontent.com/*) tries=1 ;;
+        esac
     fi
 
     [[ "${HAMSTER_DL_QUIET:-${XRK_DL_QUIET:-0}}" = "1" ]] || 日志信息 "下载 $name（${#candidates[@]} 条线路）"

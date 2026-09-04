@@ -230,16 +230,23 @@ _GitHub_有本地代理() {
     return 1
 }
 
+# 本机 mixed/http 代理端口是否在听（不依赖环境变量）
+_GitHub_本机代理在听() {
+    local port="${HAMSTER_LOCAL_PROXY_PORT:-7890}"
+    if command -v ss &>/dev/null; then
+        ss -ltn 2>/dev/null | grep -qE "[:.]${port}[[:space:]]" && return 0
+    fi
+    if command -v bash &>/dev/null; then
+        # /dev/tcp 比 curl 探活更稳（mixed-port 对裸 HTTP 可能非 200）
+        timeout 1 bash -c "echo >/dev/tcp/127.0.0.1/${port}" 2>/dev/null && return 0
+    fi
+    return 1
+}
+
 # dialog/非登录壳常不读 /etc/environment：本机 7890 在听则自动补代理
 _GitHub_补本地代理环境() {
     _GitHub_有本地代理 && return 0
-    if command -v ss &>/dev/null; then
-        ss -lntp 2>/dev/null | grep -qE '127\.0\.0\.1:7890\b' || return 1
-    elif command -v curl &>/dev/null; then
-        curl -fsS --connect-timeout 1 --max-time 2 -o /dev/null http://127.0.0.1:7890 2>/dev/null || return 1
-    else
-        return 1
-    fi
+    _GitHub_本机代理在听 || return 1
     export http_proxy="${http_proxy:-http://127.0.0.1:7890}"
     export https_proxy="${https_proxy:-http://127.0.0.1:7890}"
     export HTTP_PROXY="${HTTP_PROXY:-$http_proxy}"
@@ -252,9 +259,9 @@ _GitHub_补本地代理环境() {
 }
 
 # GitHub 下载 URL 候选
-# - 有本地代理：直连优先（走系统代理），镜像兜底
+# - 有本地代理（mihomo→183）：镜像也走代理（103 直连 gh-proxy 超时；经 183 可用）
 # - 国内无本地代理：公共加速镜像 → 直连
-# - 海外：直连 → 镜像兜底（避免机房误判/直连挂死时无退路）
+# - 海外：直连 → 镜像兜底
 GitHub_下载候选() {
     local url="$1" direct proxy u
     local -A _seen=()
@@ -270,19 +277,13 @@ GitHub_下载候选() {
     direct="$(_GitHub_清理URL "$url")"
     [[ -z "$direct" ]] && return 1
 
-    # 有本地代理时不预探公共镜像（每个探针数秒，易拖死安装）
-    if ! _GitHub_有本地代理; then
-        proxy="$(_挑选GitHub代理 2>/dev/null)" || true
-        [[ -n "$proxy" ]] && mirrors+=("$(_代理化GitHub地址 "$proxy" "$direct")")
-    fi
+    # 不预探镜像；由下载层短超时快速切换
     for proxy in "${_GITHUB_PROXIES[@]}"; do
         mirrors+=("$(_代理化GitHub地址 "$proxy" "$direct")")
     done
 
-    if _GitHub_有本地代理; then
-        urls+=("$direct")
-        urls+=("${mirrors[@]}")
-    elif 是否国内区域; then
+    if _GitHub_有本地代理 || 是否国内区域; then
+        # 有 7890 时 curl 会经代理访问 gh-proxy（实测通）；直连官方 release 很慢
         urls+=("${mirrors[@]}")
         urls+=("$direct")
     else
