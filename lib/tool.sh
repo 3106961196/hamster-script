@@ -251,8 +251,16 @@ _工具_解析安装目录() {
         git remote set-url origin "$TOOL_REPO"
     fi
     
-    # 拉取最新代码
-    git pull origin main 2>/dev/null || git pull origin master
+    # 拉取当前分支（勿写死 main；XRK-AGT 等可能在 feature 分支）
+    local branch
+    branch=$(git rev-parse --abbrev-ref HEAD 2>/dev/null || echo main)
+    if [[ "$branch" == "HEAD" ]]; then
+        branch="main"
+    fi
+    git pull --ff-only origin "$branch" 2>/dev/null \
+        || git pull origin "$branch" 2>/dev/null \
+        || git pull origin main 2>/dev/null \
+        || git pull origin master
     
     # 重新安装依赖
     if [[ -f "package.json" ]]; then
